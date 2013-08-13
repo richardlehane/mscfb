@@ -35,7 +35,6 @@
 package mscfb
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -80,11 +79,11 @@ func (r *Reader) binaryReadAt(offset int64, data interface{}) error {
 	return nil
 }
 
-func (r *Reader) rawReadAt(buf *bytes.Buffer, offset int64, sz int64) error {
+func (r *Reader) rawReadAt(b []byte, offset int64) error {
 	if _, err := r.rs.Seek(offset, 0); err != nil {
 		return ErrRead
 	}
-	if _, err := io.CopyN(buf, r.rs, sz); err != nil {
+	if _, err := r.rs.Read(b); err != nil {
 		return ErrRead
 	}
 	return nil
@@ -168,16 +167,15 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	if len(r.stream) == 0 {
 		return 0, io.EOF
 	}
-	buf := new(bytes.Buffer)
 	stream, sz := r.popStream(cap(b))
+	var idx int64
 	for _, v := range stream {
-		err := r.rawReadAt(buf, v[0], v[1])
+		jdx := idx + v[1]
+		err := r.rawReadAt(b[idx:jdx], v[0])
 		if err != nil {
 			return 0, err
 		}
-	}
-	for i, v := range buf.Bytes() {
-		b[i] = v
+		idx += v[1]
 	}
 	return sz, nil
 }

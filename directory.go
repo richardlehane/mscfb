@@ -49,6 +49,8 @@ type directoryEntryFields struct {
 // Represents a DirectoryEntry
 type DirectoryEntry struct {
 	Name     string
+	Path     []string // to create full path to file
+	Dir      bool     //isDir?
 	Creation string
 	Modified string
 	*directoryEntryFields

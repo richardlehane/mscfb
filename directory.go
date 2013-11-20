@@ -50,7 +50,6 @@ type directoryEntryFields struct {
 type DirectoryEntry struct {
 	Name     string
 	fn       nameFixer // to allow mocking in test
-	Path     []string  // to create full path to file
 	Dir      bool      //isDir?
 	Creation string
 	Modified string

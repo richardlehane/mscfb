@@ -177,6 +177,9 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 			return nil, err
 		}
 	}
+	if r.entry == 0 || entry.StartingSectorLoc == noStream || (len(r.stream) == 0 && r.firstr) {
+		entry.Dir = true
+	}
 	r.firstr = true
 	return entry, nil
 }
@@ -186,7 +189,7 @@ func (r *Reader) Name() (string, []string) {
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry == 0 || r.entries[r.entry].StartingSectorLoc == noStream || (len(r.stream) == 0 && r.firstr) {
+	if r.entries[r.entry].Dir {
 		return 0, ErrNoStream
 	}
 	r.firstr = false

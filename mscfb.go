@@ -43,6 +43,7 @@ import (
 var (
 	ErrFormat   = errors.New("mscfb: not a valid compound file")
 	ErrRead     = errors.New("mscfb: error reading compound file")
+	ErrBadDir   = errors.New("mscfb: error traversing directory structure")
 	ErrNoStream = errors.New("mscfb: storage object does not have a child stream")
 )
 
@@ -121,8 +122,12 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 type Reader struct {
 	header  *header
 	entries []*DirectoryEntry
-	rs      io.ReadSeeker
+	path    []string
+	prev    string
+	firstr  bool
+	iter    chan [2]int
 	entry   int
+	rs      io.ReadSeeker
 	stream  [][2]int64 // contains file offsets for the current stream and lengths
 }
 
@@ -138,15 +143,30 @@ func NewReader(rs io.ReadSeeker) (*Reader, error) {
 	if err := r.setMiniStream(); err != nil {
 		return nil, err
 	}
+	r.iter = r.traverse(0, 0)
+	r.path = make([]string, 0)
 	return r, nil
 }
 
 func (r *Reader) Next() (*DirectoryEntry, error) {
-	if r.entry >= len(r.entries)-1 {
+	e := <-r.iter
+	var d int
+	r.entry, d = e[0], e[1]
+	if d < 0 {
+		if d < -1 {
+			return nil, ErrBadDir
+		}
 		return nil, io.EOF
 	}
-	r.entry += 1
 	entry := r.entries[r.entry]
+	entry.fn(entry)
+	if d > len(r.path) {
+		r.path = append(r.path, r.prev)
+	}
+	if d < len(r.path) {
+		r.path = r.path[:len(r.path)-1]
+	}
+	r.prev = entry.Name
 	if entry.StartingSectorLoc <= maxRegSect {
 		var mini bool
 		if entry.StreamSize < miniStreamCutoffSize {
@@ -157,13 +177,19 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 			return nil, err
 		}
 	}
+	r.firstr = true
 	return entry, nil
 }
 
+func (r *Reader) Name() (string, []string) {
+	return r.entries[r.entry].Name, r.path
+}
+
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry == 0 || r.entries[r.entry].StartingSectorLoc == noStream {
+	if r.entry == 0 || r.entries[r.entry].StartingSectorLoc == noStream || (len(r.stream) == 0 && r.firstr) {
 		return 0, ErrNoStream
 	}
+	r.firstr = false
 	if len(r.stream) == 0 {
 		return 0, io.EOF
 	}

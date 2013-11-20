@@ -49,8 +49,9 @@ type directoryEntryFields struct {
 // Represents a DirectoryEntry
 type DirectoryEntry struct {
 	Name     string
-	Path     []string // to create full path to file
-	Dir      bool     //isDir?
+	fn       nameFixer // to allow mocking in test
+	Path     []string  // to create full path to file
+	Dir      bool      //isDir?
 	Creation string
 	Modified string
 	*directoryEntryFields
@@ -67,7 +68,7 @@ func (r *Reader) setDirEntries() error {
 	for sn != endOfChain {
 		for i := 0; i < num; i++ {
 			off := r.fileOffset(sn, false) + int64(128*i)
-			entry := new(DirectoryEntry)
+			entry := &DirectoryEntry{fn: fixName}
 			entry.directoryEntryFields = new(directoryEntryFields)
 			if err := r.binaryReadAt(off, entry.directoryEntryFields); err != nil {
 				return err
@@ -82,17 +83,54 @@ func (r *Reader) setDirEntries() error {
 			sn = nsn
 		}
 	}
-	for i, v := range entries {
-		nlen := 0
-		if v.NameLength > 2 {
-			nlen = int(v.NameLength/2 - 1)
-		} else if v.NameLength > 0 {
-			nlen = 1
-		}
-		if nlen > 0 {
-			entries[i].Name = string(utf16.Decode(v.RawName[:nlen]))
-		}
-	}
 	r.entries = entries
+	//r.indexes = make([]int, 0)
+	//r.traverse()
 	return nil
+}
+
+type nameFixer func(e *DirectoryEntry)
+
+func fixName(e *DirectoryEntry) {
+	nlen := 0
+	if e.NameLength > 2 {
+		nlen = int(e.NameLength/2 - 1)
+	} else if e.NameLength > 0 {
+		nlen = 1
+	}
+	if nlen > 0 {
+		e.Name = string(utf16.Decode(e.RawName[:nlen]))
+	}
+}
+func (r *Reader) traverse(i, d int) chan [2]int {
+	c := make(chan [2]int)
+	var recurse func(i, d int) error
+	recurse = func(i, d int) error {
+		if i < 0 || i > len(r.entries)-1 {
+			return ErrBadDir
+		}
+		entry := r.entries[i]
+		if entry.LeftSibID != noStream {
+			recurse(int(entry.LeftSibID), d)
+		}
+		c <- [2]int{i, d}
+		if entry.ChildID != noStream {
+			d++
+			recurse(int(entry.ChildID), d)
+		}
+		if entry.RightSibID != noStream {
+			recurse(int(entry.RightSibID), d)
+		}
+		return nil
+	}
+	go func() {
+		err := recurse(0, 0)
+		if err != nil {
+			c <- [2]int{-1, -1}
+		} else {
+			c <- [2]int{-2, -2}
+		}
+
+	}()
+	return c
 }

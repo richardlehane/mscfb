@@ -59,6 +59,12 @@ func compressChain(locs [][2]int64) [][2]int64 {
 	return locs
 }
 
+func truncate(locs [][2]int64, sz uint64) [][2]int64 {
+	remainder := int64(len(locs))*locs[0][1] - int64(sz)
+	locs[len(locs)-1][1] = locs[len(locs)-1][1] - remainder
+	return locs
+}
+
 func (r *Reader) setStream(sn uint32, sz uint64, mini bool) error {
 	var l int
 	var s int64
@@ -79,12 +85,12 @@ func (r *Reader) setStream(sn uint32, sz uint64, mini bool) error {
 			return err
 		}
 		if sn == endOfChain {
-			r.stream = compressChain(chain)
+			r.stream = compressChain(chain) //truncate(chain, sz))
 			return nil
 		}
 		offset = r.fileOffset(sn, mini)
 	}
-	r.stream = compressChain(chain)
+	r.stream = compressChain(chain) //truncate(chain, sz))
 	return nil
 }
 

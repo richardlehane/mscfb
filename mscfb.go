@@ -124,7 +124,6 @@ type Reader struct {
 	entries []*DirectoryEntry
 	path    []string
 	prev    string
-	firstr  bool
 	iter    chan [2]int
 	entry   int
 	rs      io.ReadSeeker
@@ -152,8 +151,8 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 	e := <-r.iter
 	var d int
 	r.entry, d = e[0], e[1]
-	if d < 0 {
-		if d < -1 {
+	if r.entry < 0 {
+		if r.entry < -1 {
 			return nil, ErrBadDir
 		}
 		return nil, io.EOF
@@ -167,7 +166,10 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 		r.path = r.path[:len(r.path)-1]
 	}
 	r.prev = entry.Name
-	if entry.StartingSectorLoc <= maxRegSect {
+	if entry.StartingSectorLoc <= maxRegSect && entry.StreamSize > 0 {
+		entry.Stream = true
+	}
+	if entry.Stream {
 		var mini bool
 		if entry.StreamSize < miniStreamCutoffSize {
 			mini = true
@@ -177,10 +179,12 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 			return nil, err
 		}
 	}
-	if r.entry == 0 || entry.StartingSectorLoc == noStream || (len(r.stream) == 0 && r.firstr) {
-		entry.Dir = true
+	if r.entry == 0 {
+		entry.Root = true
 	}
-	r.firstr = true
+	if entry.ChildID != noStream {
+		entry.Children = true
+	}
 	return entry, nil
 }
 
@@ -189,10 +193,9 @@ func (r *Reader) Name() (string, []string) {
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entries[r.entry].Dir {
+	if !r.entries[r.entry].Stream {
 		return 0, ErrNoStream
 	}
-	r.firstr = false
 	if len(r.stream) == 0 {
 		return 0, io.EOF
 	}

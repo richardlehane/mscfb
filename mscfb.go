@@ -168,6 +168,7 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 		r.path = r.path[:len(r.path)-1]
 	}
 	r.prev = entry.Name
+	entry.Path = r.path
 	if entry.StartingSectorLoc <= maxRegSect && entry.StreamSize > 0 {
 		entry.Stream = true
 	}
@@ -185,10 +186,6 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 		entry.Children = true
 	}
 	return entry, nil
-}
-
-func (r *Reader) Name() (string, []string) {
-	return r.entries[r.entry].Name, r.path
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {

@@ -49,6 +49,7 @@ type directoryEntryFields struct {
 // Represents a DirectoryEntry
 type DirectoryEntry struct {
 	Name     string
+	Path     []string
 	fn       nameFixer // to allow mocking in test
 	Stream   bool      // does the storage object have a stream?
 	Children bool      // does the storage object have children?

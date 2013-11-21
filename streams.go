@@ -85,12 +85,12 @@ func (r *Reader) setStream(sn uint32, sz uint64, mini bool) error {
 			return err
 		}
 		if sn == endOfChain {
-			r.stream = compressChain(chain) //truncate(chain, sz))
+			r.stream = compressChain(truncate(chain, sz))
 			return nil
 		}
 		offset = r.fileOffset(sn, mini)
 	}
-	r.stream = compressChain(chain) //truncate(chain, sz))
+	r.stream = compressChain(truncate(chain, sz))
 	return nil
 }
 

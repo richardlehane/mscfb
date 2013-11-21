@@ -143,6 +143,7 @@ func NewReader(rs io.ReadSeeker) (*Reader, error) {
 		return nil, err
 	}
 	r.iter = r.traverse(0, 0)
+	_ = <-r.iter // skip root
 	r.path = make([]string, 0)
 	return r, nil
 }
@@ -159,6 +160,7 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 	}
 	entry := r.entries[r.entry]
 	entry.fn(entry)
+	d-- // ignore root
 	if d > len(r.path) {
 		r.path = append(r.path, r.prev)
 	}
@@ -179,9 +181,6 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 			return nil, err
 		}
 	}
-	if r.entry == 0 {
-		entry.Root = true
-	}
 	if entry.ChildID != noStream {
 		entry.Children = true
 	}
@@ -193,7 +192,7 @@ func (r *Reader) Name() (string, []string) {
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if !r.entries[r.entry].Stream {
+	if r.entry == 0 || !r.entries[r.entry].Stream {
 		return 0, ErrNoStream
 	}
 	if len(r.stream) == 0 {

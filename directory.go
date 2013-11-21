@@ -50,7 +50,8 @@ type directoryEntryFields struct {
 type DirectoryEntry struct {
 	Name     string
 	fn       nameFixer // to allow mocking in test
-	Dir      bool      //isDir?
+	Stream   bool      // does the storage object have a stream?
+	Children bool      // does the storage object have children?
 	Creation string
 	Modified string
 	*directoryEntryFields
@@ -83,8 +84,6 @@ func (r *Reader) setDirEntries() error {
 		}
 	}
 	r.entries = entries
-	//r.indexes = make([]int, 0)
-	//r.traverse()
 	return nil
 }
 
@@ -103,10 +102,10 @@ func fixName(e *DirectoryEntry) {
 }
 func (r *Reader) traverse(i, d int) chan [2]int {
 	c := make(chan [2]int)
-	var recurse func(i, d int) error
-	recurse = func(i, d int) error {
+	var recurse func(i, d int)
+	recurse = func(i, d int) {
 		if i < 0 || i > len(r.entries)-1 {
-			return ErrBadDir
+			c <- [2]int{-2, -2}
 		}
 		entry := r.entries[i]
 		if entry.LeftSibID != noStream {
@@ -120,16 +119,11 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 		if entry.RightSibID != noStream {
 			recurse(int(entry.RightSibID), d)
 		}
-		return nil
+		return
 	}
 	go func() {
-		err := recurse(0, 0)
-		if err != nil {
-			c <- [2]int{-1, -1}
-		} else {
-			c <- [2]int{-2, -2}
-		}
-
+		recurse(0, 0)
+		c <- [2]int{-1, -1}
 	}()
 	return c
 }

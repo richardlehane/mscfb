@@ -45,13 +45,13 @@ type header struct {
 }
 
 func (h *header) setDifats(r *Reader) error {
-	d := h.InitialDifats[:]
+	h.difats = h.InitialDifats[:]
 	if h.NumDifatSectors > 0 {
 		sz := sectorSize / 4
 		cap := h.NumDifatSectors*sz + 109
 		n := make([]uint32, 109, cap)
-		copy(n, d)
-		d = n
+		copy(n, h.difats)
+		h.difats = n
 		off := h.DifatSectorLoc
 		for i := 0; i < int(h.NumDifatSectors); i++ {
 			buf := make([]uint32, sz)
@@ -60,17 +60,9 @@ func (h *header) setDifats(r *Reader) error {
 			}
 			off = buf[sz-1]
 			buf = buf[:sz-1]
-			d = append(d, buf...)
+			h.difats = append(h.difats, buf...)
 		}
 	}
-	var eoc int // find end of chain - Not sure that this is necessary
-	for i, v := range d {
-		if v == freeSect {
-			eoc = i
-			break
-		}
-	}
-	h.difats = d[:eoc]
 	return nil
 }
 

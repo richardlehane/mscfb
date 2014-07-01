@@ -106,6 +106,7 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 	var recurse func(i, d int)
 	recurse = func(i, d int) {
 		if i < 0 || i > len(r.entries)-1 {
+			// signal error
 			c <- [2]int{-2, -2}
 		}
 		entry := r.entries[i]
@@ -124,6 +125,7 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 	}
 	go func() {
 		recurse(0, 0)
+		// signal EOF
 		c <- [2]int{-1, -1}
 	}()
 	return c

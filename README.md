@@ -20,3 +20,5 @@ Example usage:
 The Compound File Binary File Format is also known as the Object Linking and Embedding (OLE) or Component Object Model (COM) format and was used by early MS software such as MS Office. See [http://msdn.microsoft.com/en-us/library/dd942138.aspx](http://msdn.microsoft.com/en-us/library/dd942138.aspx) for more details
 
 Install with `go get github.com/richardlehane/mscfb`
+
+[![Build Status](https://travis-ci.org/richardlehane/mscfb.png?branch=master)](https://travis-ci.org/richardlehane/mscfb)

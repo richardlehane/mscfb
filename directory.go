@@ -14,7 +14,11 @@
 
 package mscfb
 
-import "unicode/utf16"
+import (
+	"encoding/hex"
+	"time"
+	"unicode/utf16"
+)
 
 //objectType types
 const (
@@ -40,8 +44,10 @@ type directoryEntryFields struct {
 	ChildID           uint32     //4 bytes, Dir? Stream ID of child object, if none set to NOSTREAM
 	CLSID             [16]byte   // Contains an object class GUID (must be set to zeroes for stream object)
 	StateBits         [4]byte    // user-defined flags for storage object
-	CreateDate        [8]byte    //Windows FILETIME structure in UTC
-	ModifiedDate      [8]byte    //Windows FILETIME structure in UTC
+	CreateLow         uint32     // Windows FILETIME structure
+	CreateHigh        uint32     // Windows FILETIME structure
+	ModifyLow         uint32     // Windows FILETIME structure
+	ModifyHigh        uint32     // Windows FILETIME structure
 	StartingSectorLoc uint32     // if a stream object, first sector location. If root, first sector of ministream
 	StreamSize        uint64     // if a stream, size of user-defined data. If root, size of ministream
 }
@@ -50,11 +56,12 @@ type directoryEntryFields struct {
 type DirectoryEntry struct {
 	Name     string
 	Path     []string
-	fn       nameFixer // to allow mocking in test
-	Stream   bool      // does the storage object have a stream?
-	Children bool      // does the storage object have children?
-	Creation string
-	Modified string
+	fn       dirFixer // to allow mocking in test
+	Stream   bool     // does the storage object have a stream?
+	Children bool     // does the storage object have children?
+	Created  time.Time
+	Modified time.Time
+	ID       string // hex dump of the CLSID
 	*directoryEntryFields
 }
 
@@ -69,7 +76,7 @@ func (r *Reader) setDirEntries() error {
 	for sn != endOfChain {
 		for i := 0; i < num; i++ {
 			off := r.fileOffset(sn, false) + int64(128*i)
-			entry := &DirectoryEntry{fn: fixName}
+			entry := &DirectoryEntry{fn: fixDir}
 			entry.directoryEntryFields = new(directoryEntryFields)
 			if err := r.binaryReadAt(off, entry.directoryEntryFields); err != nil {
 				return err
@@ -88,7 +95,13 @@ func (r *Reader) setDirEntries() error {
 	return nil
 }
 
-type nameFixer func(e *DirectoryEntry)
+type dirFixer func(e *DirectoryEntry)
+
+func fixDir(e *DirectoryEntry) {
+	fixName(e)
+	fixTime(e)
+	e.ID = fixGuid(e.CLSID)
+}
 
 func fixName(e *DirectoryEntry) {
 	nlen := 0
@@ -101,6 +114,47 @@ func fixName(e *DirectoryEntry) {
 		e.Name = string(utf16.Decode(e.RawName[:nlen]))
 	}
 }
+
+func fixTime(e *DirectoryEntry) {
+	e.Created = time.Unix(winToUnix(e.CreateHigh, e.CreateLow), 0)
+	e.Modified = time.Unix(winToUnix(e.ModifyHigh, e.ModifyLow), 0)
+}
+
+func reverse(seq []byte) []byte {
+	ret := make([]byte, len(seq))
+	for i, b := range seq {
+		ret[len(seq)-i-1] = b
+	}
+	return ret
+}
+
+func fixGuid(seq [16]byte) string {
+	return "{" +
+		hex.EncodeToString(reverse(seq[:4])) +
+		"-" +
+		hex.EncodeToString(reverse(seq[4:6])) +
+		"-" +
+		hex.EncodeToString(reverse(seq[6:8])) +
+		"-" +
+		hex.EncodeToString(seq[8:10]) +
+		"-" +
+		hex.EncodeToString(seq[10:]) +
+		"}"
+}
+
+const (
+	tick       uint64 = 10000000
+	gregToUnix uint64 = 11644473600
+)
+
+func winToUnix(high, low uint32) int64 {
+	gregTime := ((uint64(high) << 32) + uint64(low)) / tick
+	if gregTime < gregToUnix {
+		return 0
+	}
+	return int64(gregTime - gregToUnix)
+}
+
 func (r *Reader) traverse(i, d int) chan [2]int {
 	c := make(chan [2]int)
 	var recurse func(i, d int)

@@ -38,6 +38,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"time"
 )
 
 var (
@@ -120,14 +121,17 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 
 // Reader provides sequential access to the contents of a compound file
 type Reader struct {
-	header  *header
-	entries []*DirectoryEntry
-	path    []string
-	prev    string
-	iter    chan [2]int
-	entry   int
-	rs      io.ReadSeeker
-	stream  [][2]int64 // contains file offsets for the current stream and lengths
+	header   *header
+	entries  []*DirectoryEntry
+	path     []string
+	prev     string
+	iter     chan [2]int
+	entry    int
+	rs       io.ReadSeeker
+	stream   [][2]int64 // contains file offsets for the current stream and lengths
+	ID       string     // CLSID of root directory object
+	Created  time.Time
+	Modified time.Time
 }
 
 func NewReader(rs io.ReadSeeker) (*Reader, error) {
@@ -142,9 +146,14 @@ func NewReader(rs io.ReadSeeker) (*Reader, error) {
 	if err := r.setMiniStream(); err != nil {
 		return nil, err
 	}
-	r.iter = r.traverse(0, 0)
-	_ = <-r.iter // skip root
 	r.path = make([]string, 0)
+	r.iter = r.traverse(0, 0)
+	rootIdx := <-r.iter
+	root := r.entries[rootIdx[0]]
+	root.fn(root)
+	r.ID = root.ID
+	r.Created = root.Created
+	r.Modified = root.Modified
 	return r, nil
 }
 

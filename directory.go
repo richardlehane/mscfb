@@ -15,9 +15,10 @@
 package mscfb
 
 import (
-	"encoding/hex"
 	"time"
 	"unicode/utf16"
+
+	"github.com/richardlehane/msoleps/types"
 )
 
 //objectType types
@@ -35,21 +36,19 @@ const (
 )
 
 type directoryEntryFields struct {
-	RawName           [32]uint16 //64 bytes, unicode string encoded in UTF-16. If root, "Root Entry\0" w
-	NameLength        uint16     //2 bytes
-	ObjectType        uint8      //1 byte Must be one of the types specified above
-	Color             uint8      //1 byte Must be 0x00 RED or 0x01 BLACK
-	LeftSibID         uint32     //4 bytes, Dir? Stream ID of left sibling, if none set to NOSTREAM
-	RightSibID        uint32     //4 bytes, Dir? Stream ID of right sibling, if none set to NOSTREAM
-	ChildID           uint32     //4 bytes, Dir? Stream ID of child object, if none set to NOSTREAM
-	CLSID             [16]byte   // Contains an object class GUID (must be set to zeroes for stream object)
-	StateBits         [4]byte    // user-defined flags for storage object
-	CreateLow         uint32     // Windows FILETIME structure
-	CreateHigh        uint32     // Windows FILETIME structure
-	ModifyLow         uint32     // Windows FILETIME structure
-	ModifyHigh        uint32     // Windows FILETIME structure
-	StartingSectorLoc uint32     // if a stream object, first sector location. If root, first sector of ministream
-	StreamSize        uint64     // if a stream, size of user-defined data. If root, size of ministream
+	RawName           [32]uint16     //64 bytes, unicode string encoded in UTF-16. If root, "Root Entry\0" w
+	NameLength        uint16         //2 bytes
+	ObjectType        uint8          //1 byte Must be one of the types specified above
+	Color             uint8          //1 byte Must be 0x00 RED or 0x01 BLACK
+	LeftSibID         uint32         //4 bytes, Dir? Stream ID of left sibling, if none set to NOSTREAM
+	RightSibID        uint32         //4 bytes, Dir? Stream ID of right sibling, if none set to NOSTREAM
+	ChildID           uint32         //4 bytes, Dir? Stream ID of child object, if none set to NOSTREAM
+	CLSID             types.Guid     // Contains an object class GUID (must be set to zeroes for stream object)
+	StateBits         [4]byte        // user-defined flags for storage object
+	Create            types.FileTime // Windows FILETIME structure
+	Modify            types.FileTime // Windows FILETIME structure
+	StartingSectorLoc uint32         // if a stream object, first sector location. If root, first sector of ministream
+	StreamSize        uint64         // if a stream, size of user-defined data. If root, size of ministream
 }
 
 // Represents a DirectoryEntry
@@ -99,8 +98,9 @@ type dirFixer func(e *DirectoryEntry)
 
 func fixDir(e *DirectoryEntry) {
 	fixName(e)
-	fixTime(e)
-	e.ID = fixGuid(e.CLSID)
+	e.Created = e.Create.Time()
+	e.Modified = e.Modify.Time()
+	e.ID = e.CLSID.String()
 }
 
 func fixName(e *DirectoryEntry) {
@@ -113,46 +113,6 @@ func fixName(e *DirectoryEntry) {
 	if nlen > 0 {
 		e.Name = string(utf16.Decode(e.RawName[:nlen]))
 	}
-}
-
-func fixTime(e *DirectoryEntry) {
-	e.Created = time.Unix(winToUnix(e.CreateHigh, e.CreateLow), 0)
-	e.Modified = time.Unix(winToUnix(e.ModifyHigh, e.ModifyLow), 0)
-}
-
-func reverse(seq []byte) []byte {
-	ret := make([]byte, len(seq))
-	for i, b := range seq {
-		ret[len(seq)-i-1] = b
-	}
-	return ret
-}
-
-func fixGuid(seq [16]byte) string {
-	return "{" +
-		hex.EncodeToString(reverse(seq[:4])) +
-		"-" +
-		hex.EncodeToString(reverse(seq[4:6])) +
-		"-" +
-		hex.EncodeToString(reverse(seq[6:8])) +
-		"-" +
-		hex.EncodeToString(seq[8:10]) +
-		"-" +
-		hex.EncodeToString(seq[10:]) +
-		"}"
-}
-
-const (
-	tick       uint64 = 10000000
-	gregToUnix uint64 = 11644473600
-)
-
-func winToUnix(high, low uint32) int64 {
-	gregTime := ((uint64(high) << 32) + uint64(low)) / tick
-	if gregTime < gregToUnix {
-		return 0
-	}
-	return int64(gregTime - gregToUnix)
 }
 
 func (r *Reader) traverse(i, d int) chan [2]int {

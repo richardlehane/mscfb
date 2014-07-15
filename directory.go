@@ -54,6 +54,7 @@ type directoryEntryFields struct {
 // Represents a DirectoryEntry
 type DirectoryEntry struct {
 	Name     string
+	Initial  uint16 // the first character in the name (identifies special streams such as MSOLEPS property sets)
 	Path     []string
 	fn       dirFixer // to allow mocking in test
 	Stream   bool     // does the storage object have a stream?
@@ -112,6 +113,7 @@ func fixName(e *DirectoryEntry) {
 	}
 	if nlen > 0 {
 		e.Name = string(utf16.Decode(e.RawName[:nlen]))
+		e.Initial = e.RawName[0]
 	}
 }
 

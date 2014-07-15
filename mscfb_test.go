@@ -91,7 +91,7 @@ func empty(sl []byte) bool {
 func testFile(t *testing.T, path string) {
 	file, _ := os.Open(path)
 	defer file.Close()
-	doc, err := NewReader(file)
+	doc, err := New(file)
 	if err != nil {
 		t.Errorf("Error opening file; Returns error: ", err)
 	}

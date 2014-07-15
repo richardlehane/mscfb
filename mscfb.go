@@ -20,7 +20,7 @@
 // Example:
 //   file, _ := os.Open("test/test.doc")
 //   defer file.Close()
-//   doc, err := mscfb.NewReader(file)
+//   doc, err := mscfb.New(file)
 //   if err != nil {
 //     log.Fatal(err)
 //	 }
@@ -134,7 +134,7 @@ type Reader struct {
 	Modified time.Time
 }
 
-func NewReader(rs io.ReadSeeker) (*Reader, error) {
+func New(rs io.ReadSeeker) (*Reader, error) {
 	r := new(Reader)
 	r.rs = rs
 	if err := r.setHeader(); err != nil {

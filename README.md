@@ -4,7 +4,7 @@ Example usage:
 
     file, _ := os.Open("test/test.doc")
     defer file.Close()
-    doc, err := mscfb.NewReader(file)
+    doc, err := mscfb.New(file)
     if err != nil {
       log.Fatal(err)
     }

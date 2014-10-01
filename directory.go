@@ -16,6 +16,7 @@ package mscfb
 
 import (
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/richardlehane/msoleps/types"
@@ -112,8 +113,12 @@ func fixName(e *DirectoryEntry) {
 		nlen = 1
 	}
 	if nlen > 0 {
-		e.Name = string(utf16.Decode(e.RawName[:nlen]))
 		e.Initial = e.RawName[0]
+		slen := 0
+		if !unicode.IsPrint(rune(e.Initial)) {
+			slen = 1
+		}
+		e.Name = string(utf16.Decode(e.RawName[slen:nlen]))
 	}
 }
 

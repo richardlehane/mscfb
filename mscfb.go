@@ -107,8 +107,14 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	index := int(sn / entries) // find position in DIFAT or minifat array
 	var sect uint32
 	if mini {
+		if index < 0 || index >= len(r.header.miniFatLocs) {
+			return 0, ErrBadDir
+		}
 		sect = r.header.miniFatLocs[index]
 	} else {
+		if index < 0 || index >= len(r.header.difats) {
+			return 0, ErrBadDir
+		}
 		sect = r.header.difats[index]
 	}
 	fatIndex := sn % entries // find position within FAT or MiniFAT sector
@@ -146,7 +152,6 @@ func New(rs io.ReadSeeker) (*Reader, error) {
 	if err := r.setMiniStream(); err != nil {
 		return nil, err
 	}
-	r.path = make([]string, 0)
 	r.iter = r.traverse(0, 0)
 	rootIdx := <-r.iter
 	root := r.entries[rootIdx[0]]

@@ -163,14 +163,14 @@ func New(rs io.ReadSeeker) (*Reader, error) {
 }
 
 func (r *Reader) Next() (*DirectoryEntry, error) {
-	e := <-r.iter
+	e, ok := <-r.iter
+	if !ok {
+		return nil, io.EOF
+	}
 	var d int
 	r.entry, d = e[0], e[1]
 	if r.entry < 0 {
-		if r.entry < -1 {
-			return nil, ErrBadDir
-		}
-		return nil, io.EOF
+		return nil, ErrBadDir
 	}
 	entry := r.entries[r.entry]
 	entry.fn(entry)
@@ -213,6 +213,9 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	var idx int64
 	for _, v := range stream {
 		jdx := idx + v[1]
+		if idx < 0 || jdx < idx || jdx > int64(len(b)) {
+			return 0, ErrRead
+		}
 		err := r.rawReadAt(b[idx:jdx], v[0])
 		if err != nil {
 			return 0, err
@@ -220,4 +223,15 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 		idx += v[1]
 	}
 	return sz, nil
+}
+
+// close off the traverse goroutine
+func (r *Reader) Quit() error {
+	var err error
+	for e := range r.iter {
+		if e[0] < 0 {
+			err = ErrBadDir
+		}
+	}
+	return err
 }

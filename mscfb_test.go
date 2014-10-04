@@ -116,11 +116,11 @@ func TestTraverse(t *testing.T) {
 	indexes := make([]int, 0)
 	depths := make([]int, 0)
 	for {
-		e := <-r.iter
-		i, d := e[0], e[1]
-		if i < 0 {
+		e, ok := <-r.iter
+		if !ok {
 			break
 		}
+		i, d := e[0], e[1]
 		indexes = append(indexes, i)
 		depths = append(depths, d)
 	}

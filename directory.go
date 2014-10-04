@@ -128,7 +128,7 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 	recurse = func(i, d int) {
 		if i < 0 || i > len(r.entries)-1 {
 			// signal error
-			c <- [2]int{-2, -2}
+			c <- [2]int{-1, -1}
 		}
 		entry := r.entries[i]
 		if entry.LeftSibID != noStream {
@@ -147,7 +147,7 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 	go func() {
 		recurse(0, 0)
 		// signal EOF
-		c <- [2]int{-1, -1}
+		close(c)
 	}()
 	return c
 }

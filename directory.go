@@ -15,6 +15,7 @@
 package mscfb
 
 import (
+	"encoding/binary"
 	"time"
 	"unicode"
 	"unicode/utf16"
@@ -24,7 +25,7 @@ import (
 
 //objectType types
 const (
-	unknown     uint8 = 0x0
+	unknown     uint8 = 0x0 // this means unallocated - typically zeroed dir entries
 	storage     uint8 = 0x1
 	stream      uint8 = 0x2
 	rootStorage uint8 = 0x5
@@ -49,7 +50,7 @@ type directoryEntryFields struct {
 	Create            types.FileTime // Windows FILETIME structure
 	Modify            types.FileTime // Windows FILETIME structure
 	StartingSectorLoc uint32         // if a stream object, first sector location. If root, first sector of ministream
-	StreamSize        uint64         // if a stream, size of user-defined data. If root, size of ministream
+	StreamSize        [8]byte        // if a stream, size of user-defined data. If root, size of ministream
 }
 
 // Represents a DirectoryEntry
@@ -58,8 +59,8 @@ type DirectoryEntry struct {
 	Initial  uint16 // the first character in the name (identifies special streams such as MSOLEPS property sets)
 	Path     []string
 	fn       dirFixer // to allow mocking in test
-	Stream   bool     // does the storage object have a stream?
-	Children bool     // does the storage object have children?
+	Stream   bool     // does the entry have a stream?
+	Size     uint64   // size of stream
 	Created  time.Time
 	Modified time.Time
 	ID       string // hex dump of the CLSID
@@ -77,7 +78,7 @@ func (r *Reader) setDirEntries() error {
 	for sn != endOfChain {
 		for i := 0; i < num; i++ {
 			off := r.fileOffset(sn, false) + int64(128*i)
-			entry := &DirectoryEntry{fn: fixDir}
+			entry := &DirectoryEntry{fn: fixDir(r.header.MajorVersion)}
 			entry.directoryEntryFields = new(directoryEntryFields)
 			if err := r.binaryReadAt(off, entry.directoryEntryFields); err != nil {
 				return err
@@ -98,11 +99,22 @@ func (r *Reader) setDirEntries() error {
 
 type dirFixer func(e *DirectoryEntry)
 
-func fixDir(e *DirectoryEntry) {
-	fixName(e)
-	e.Created = e.Create.Time()
-	e.Modified = e.Modify.Time()
-	e.ID = e.CLSID.String()
+func fixDir(v uint16) dirFixer {
+	return func(e *DirectoryEntry) {
+		fixName(e)
+		e.Created = e.Create.Time()
+		e.Modified = e.Modify.Time()
+		e.ID = e.CLSID.String()
+		// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
+		if v > 3 {
+			e.Size = binary.LittleEndian.Uint64(e.StreamSize[:])
+		} else {
+			e.Size = uint64(binary.LittleEndian.Uint32(e.StreamSize[:4]))
+		}
+		if e.ObjectType == stream && e.StartingSectorLoc <= maxRegSect && e.Size > 0 {
+			e.Stream = true
+		}
+	}
 }
 
 func fixName(e *DirectoryEntry) {

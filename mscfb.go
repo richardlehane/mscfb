@@ -183,21 +183,15 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 	}
 	r.prev = entry.Name
 	entry.Path = r.path
-	if entry.StartingSectorLoc <= maxRegSect && entry.StreamSize > 0 {
-		entry.Stream = true
-	}
 	if entry.Stream {
 		var mini bool
-		if entry.StreamSize < miniStreamCutoffSize {
+		if entry.Size < miniStreamCutoffSize {
 			mini = true
 		}
-		err := r.setStream(entry.StartingSectorLoc, entry.StreamSize, mini)
+		err := r.setStream(entry.StartingSectorLoc, entry.Size, mini)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if entry.ChildID != noStream {
-		entry.Children = true
 	}
 	return entry, nil
 }

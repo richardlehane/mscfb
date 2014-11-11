@@ -203,7 +203,7 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	if len(r.stream) == 0 {
 		return 0, io.EOF
 	}
-	stream, sz := r.popStream(cap(b))
+	stream, sz := r.popStream(len(b))
 	var idx int64
 	for _, v := range stream {
 		jdx := idx + v[1]

@@ -148,8 +148,7 @@ func (r *Reader) traverse(i, d int) chan [2]int {
 		}
 		c <- [2]int{i, d}
 		if entry.ChildID != noStream {
-			d++
-			recurse(int(entry.ChildID), d)
+			recurse(int(entry.ChildID), d+1)
 		}
 		if entry.RightSibID != noStream {
 			recurse(int(entry.RightSibID), d)

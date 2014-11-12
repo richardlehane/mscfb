@@ -179,7 +179,7 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 		r.path = append(r.path, r.prev)
 	}
 	if d < len(r.path) {
-		r.path = r.path[:len(r.path)-1]
+		r.path = r.path[:d]
 	}
 	r.prev = entry.Name
 	entry.Path = r.path

@@ -62,7 +62,7 @@ var (
 		},
 	}
 	expect  = []int{0, 1, 2, 4, 5, 8, 9, 11, 6, 3, 7, 10}
-	expectd = []int{0, 1, 1, 2, 2, 3, 3, 4, 3, 2, 3, 4}
+	expectd = []int{0, 1, 1, 2, 2, 3, 3, 4, 2, 1, 2, 3}
 )
 
 func equals(a, b []int) bool {
@@ -128,7 +128,7 @@ func TestTraverse(t *testing.T) {
 		t.Errorf("Error traversing, bad index: %v; expecting: %v", indexes, expect)
 	}
 	if !equals(depths, expectd) {
-		t.Errorf("Error traversing, bad depths: %v; expecting: %v", depths, expect)
+		t.Errorf("Error traversing, bad depths: %v; expecting: %v", depths, expectd)
 	}
 }
 

@@ -120,6 +120,7 @@ func fixDir(v uint16) dirFixer {
 func fixName(e *DirectoryEntry) {
 	nlen := 0
 	if e.NameLength > 2 {
+		// The length MUST be a multiple of 2, and include the terminating null character in the count.
 		nlen = int(e.NameLength/2 - 1)
 	} else if e.NameLength > 0 {
 		nlen = 1

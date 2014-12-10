@@ -17,7 +17,7 @@ package mscfb
 // set the ministream FAT and sector slices in the header
 func (r *Reader) setMiniStream() error {
 	// do nothing if there is no ministream
-	if r.entries[0].StartingSectorLoc == endOfChain || r.header.MiniFatSectorLoc == endOfChain {
+	if r.Entries[0].StartingSectorLoc == endOfChain || r.header.MiniFatSectorLoc == endOfChain {
 		return nil
 	}
 	// build a slice of minifat sectors (akin to the DIFAT slice)
@@ -34,7 +34,7 @@ func (r *Reader) setMiniStream() error {
 	// build a slice of ministream sectors
 	c = int(sectorSize / 4 * r.header.NumMiniFatSectors)
 	r.header.miniStreamLocs = make([]uint32, 0, c)
-	sn := r.entries[0].StartingSectorLoc
+	sn := r.Entries[0].StartingSectorLoc
 	var err error
 	for sn != endOfChain {
 		r.header.miniStreamLocs = append(r.header.miniStreamLocs, sn)

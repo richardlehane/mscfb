@@ -16,6 +16,8 @@ package mscfb
 
 import "encoding/binary"
 
+const lenHeader int = 8 + 16 + 10 + 6 + 12 + 8 + 16 + 109*4
+
 type headerFields struct {
 	Signature           uint64
 	_                   [16]byte    //CLSID - ignore, must be null
@@ -37,6 +39,27 @@ type headerFields struct {
 	InitialDifats       [109]uint32 //The first 109 difat sectors are included in the header
 }
 
+func makeHeader(b []byte) *headerFields {
+	h := &headerFields{}
+	h.Signature = binary.LittleEndian.Uint64(b[:8])
+	h.MinorVersion = binary.LittleEndian.Uint16(b[24:26])
+	h.MajorVersion = binary.LittleEndian.Uint16(b[26:28])
+	h.SectorSize = binary.LittleEndian.Uint16(b[30:32])
+	h.NumDirectorySectors = binary.LittleEndian.Uint32(b[40:44])
+	h.NumFatSectors = binary.LittleEndian.Uint32(b[44:48])
+	h.DirectorySectorLoc = binary.LittleEndian.Uint32(b[48:52])
+	h.MiniFatSectorLoc = binary.LittleEndian.Uint32(b[60:64])
+	h.NumMiniFatSectors = binary.LittleEndian.Uint32(b[64:68])
+	h.DifatSectorLoc = binary.LittleEndian.Uint32(b[68:72])
+	h.NumDifatSectors = binary.LittleEndian.Uint32(b[72:76])
+	var idx int
+	for i := 76; i < 512; i = i + 4 {
+		h.InitialDifats[idx] = binary.LittleEndian.Uint32(b[i : i+4])
+		idx++
+	}
+	return h
+}
+
 type header struct {
 	*headerFields
 	difats         []uint32
@@ -44,42 +67,38 @@ type header struct {
 	miniStreamLocs []uint32 // chain of sectors containing the ministream
 }
 
-func (h *header) setDifats(r *Reader) error {
-	h.difats = h.InitialDifats[:]
-	if h.NumDifatSectors > 0 {
+func (r *Reader) setDifats() error {
+	r.header.difats = r.header.InitialDifats[:]
+	if r.header.NumDifatSectors > 0 {
 		sz := sectorSize / 4
-		cap := h.NumDifatSectors*sz + 109
-		n := make([]uint32, 109, cap)
-		copy(n, h.difats)
-		h.difats = n
-		off := h.DifatSectorLoc
-		for i := 0; i < int(h.NumDifatSectors); i++ {
-			buf := make([]uint32, sz)
-			if err := r.binaryReadAt(r.fileOffset(off, false), &buf); err != nil {
-				return err
+		n := make([]uint32, 109, r.header.NumDifatSectors*sz+109)
+		copy(n, r.header.difats)
+		r.header.difats = n
+		off := r.header.DifatSectorLoc
+		for i := 0; i < int(r.header.NumDifatSectors); i++ {
+			buf, err := r.readAt(int64(off), int(sectorSize))
+			if err != nil {
+				return ErrRead
 			}
-			off = buf[sz-1]
-			buf = buf[:sz-1]
-			h.difats = append(h.difats, buf...)
+			for j := 0; j < int(sz)-1; j++ {
+				r.header.difats = append(r.header.difats, binary.LittleEndian.Uint32(buf[j*4:j*4+4]))
+			}
+			off = binary.LittleEndian.Uint32(buf[len(buf)-4:])
 		}
 	}
 	return nil
 }
 
 func (r *Reader) setHeader() error {
-	h := new(header)
-	h.headerFields = new(headerFields)
-	if err := binary.Read(r.rs, binary.LittleEndian, h.headerFields); err != nil {
-		return ErrFormat
+	buf, err := r.readAt(0, lenHeader)
+	if err != nil {
+		return ErrRead
 	}
+	r.header = &header{headerFields: makeHeader(buf)}
 	// sanity check - check signature
-	if h.Signature != signature {
+	if r.header.Signature != signature {
 		return ErrFormat
 	}
-	setSectorSize(h.SectorSize)
-	if err := h.setDifats(r); err != nil {
-		return ErrFormat
-	}
-	r.header = h
+	setSectorSize(r.header.SectorSize)
 	return nil
 }

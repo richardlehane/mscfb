@@ -37,6 +37,8 @@ const (
 	black uint8 = 0x1
 )
 
+const lenDirEntry int = 64 + 4*4 + 16 + 4 + 8*2 + 4 + 8
+
 type directoryEntryFields struct {
 	RawName           [32]uint16     //64 bytes, unicode string encoded in UTF-16. If root, "Root Entry\0" w
 	NameLength        uint16         //2 bytes
@@ -51,6 +53,26 @@ type directoryEntryFields struct {
 	Modify            types.FileTime // Windows FILETIME structure
 	StartingSectorLoc uint32         // if a stream object, first sector location. If root, first sector of ministream
 	StreamSize        [8]byte        // if a stream, size of user-defined data. If root, size of ministream
+}
+
+func makeDirEntry(b []byte) *directoryEntryFields {
+	d := &directoryEntryFields{}
+	for i := range d.RawName {
+		d.RawName[i] = binary.LittleEndian.Uint16(b[i*2 : i*2+2])
+	}
+	d.NameLength = binary.LittleEndian.Uint16(b[64:66])
+	d.ObjectType = uint8(b[66])
+	d.Color = uint8(b[67])
+	d.LeftSibID = binary.LittleEndian.Uint32(b[68:72])
+	d.RightSibID = binary.LittleEndian.Uint32(b[72:76])
+	d.ChildID = binary.LittleEndian.Uint32(b[76:80])
+	d.CLSID = types.MustGuid(b[80:96])
+	copy(d.StateBits[:], b[96:100])
+	d.Create = types.MustFileTime(b[100:108])
+	d.Modify = types.MustFileTime(b[108:116])
+	d.StartingSectorLoc = binary.LittleEndian.Uint32(b[116:120])
+	copy(d.StreamSize[:], b[120:128])
+	return d
 }
 
 // Represents a DirectoryEntry
@@ -76,13 +98,14 @@ func (r *Reader) setDirEntries() error {
 	num := int(sectorSize / 128)
 	sn := r.header.DirectorySectorLoc
 	for sn != endOfChain {
+		off := r.fileOffset(sn, false)
+		buf, err := r.readAt(off, int(sectorSize))
+		if err != nil {
+			return ErrRead
+		}
 		for i := 0; i < num; i++ {
-			off := r.fileOffset(sn, false) + int64(128*i)
 			entry := &DirectoryEntry{fn: fixDir(r.header.MajorVersion)}
-			entry.directoryEntryFields = new(directoryEntryFields)
-			if err := r.binaryReadAt(off, entry.directoryEntryFields); err != nil {
-				return err
-			}
+			entry.directoryEntryFields = makeDirEntry(buf[i*128:])
 			if entry.directoryEntryFields.ObjectType != unknown {
 				entries = append(entries, entry)
 			}
@@ -93,7 +116,7 @@ func (r *Reader) setDirEntries() error {
 			sn = nsn
 		}
 	}
-	r.entries = entries
+	r.Entries = entries
 	return nil
 }
 
@@ -135,31 +158,36 @@ func fixName(e *DirectoryEntry) {
 	}
 }
 
-func (r *Reader) traverse(i, d int) chan [2]int {
-	c := make(chan [2]int)
-	var recurse func(i, d int)
-	recurse = func(i, d int) {
-		if i < 0 || i > len(r.entries)-1 {
-			// signal error
-			c <- [2]int{-1, -1}
+func (r *Reader) traverse() error {
+	r.Indexes = make([]int, len(r.Entries))
+	var idx int
+	var recurse func(i int, path []string)
+	var err error
+	recurse = func(i int, path []string) {
+		if i < 0 || i > len(r.Entries)-1 {
+			err = ErrBadDir
+			return
 		}
-		entry := r.entries[i]
+		entry := r.Entries[i]
 		if entry.LeftSibID != noStream {
-			recurse(int(entry.LeftSibID), d)
+			recurse(int(entry.LeftSibID), path)
 		}
-		c <- [2]int{i, d}
+		entry.fn(entry)
+		r.Indexes[idx] = i
+		entry.Path = path
+		idx++
 		if entry.ChildID != noStream {
-			recurse(int(entry.ChildID), d+1)
+			if i > 0 {
+				recurse(int(entry.ChildID), append(path, entry.Name))
+			} else {
+				recurse(int(entry.ChildID), path)
+			}
 		}
 		if entry.RightSibID != noStream {
-			recurse(int(entry.RightSibID), d)
+			recurse(int(entry.RightSibID), path)
 		}
 		return
 	}
-	go func() {
-		recurse(0, 0)
-		// signal EOF
-		close(c)
-	}()
-	return c
+	recurse(0, []string{})
+	return err
 }

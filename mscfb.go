@@ -71,24 +71,21 @@ const (
 	noStream       uint32 = 0xFFFFFFFF // empty pointer
 )
 
-func (r *Reader) binaryReadAt(offset int64, data interface{}) error {
-	if _, err := r.rs.Seek(offset, 0); err != nil {
-		return ErrRead
+func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
+	if r.slicer {
+		b, err := r.ra.(Slicer).Slice(int(offset), length)
+		if err != nil {
+			return nil, ErrRead
+		}
+		return b, nil
 	}
-	if err := binary.Read(r.rs, binary.LittleEndian, data); err != nil {
-		return ErrRead
+	if length > len(r.buf) {
+		return nil, ErrRead
 	}
-	return nil
-}
-
-func (r *Reader) rawReadAt(b []byte, offset int64) error {
-	if _, err := r.rs.Seek(offset, 0); err != nil {
-		return ErrRead
+	if _, err := r.ra.ReadAt(r.buf[:length], offset); err != nil {
+		return nil, ErrRead
 	}
-	if _, err := r.rs.Read(b); err != nil {
-		return ErrRead
-	}
-	return nil
+	return r.buf[:length], nil
 }
 
 func (r *Reader) fileOffset(sn uint32, mini bool) int64 {
@@ -120,41 +117,56 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	fatIndex := sn % entries // find position within FAT or MiniFAT sector
 	offset := r.fileOffset(sect, false)
 	offset += int64(fatIndex * 4)
-	var target uint32
-	err := r.binaryReadAt(offset, &target)
-	return target, err
+	buf, err := r.readAt(offset, 4)
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf), nil
 }
 
 // Reader provides sequential access to the contents of a compound file
 type Reader struct {
+	slicer   bool
+	buf      []byte
 	header   *header
-	entries  []*DirectoryEntry
-	path     []string
-	prev     string
-	iter     chan [2]int
+	Entries  []*DirectoryEntry
 	entry    int
-	rs       io.ReadSeeker
+	Indexes  []int
+	ra       io.ReaderAt
 	stream   [][2]int64 // contains file offsets for the current stream and lengths
 	ID       string     // CLSID of root directory object
 	Created  time.Time
 	Modified time.Time
 }
 
-func New(rs io.ReadSeeker) (*Reader, error) {
-	r := new(Reader)
-	r.rs = rs
+func New(ra io.ReaderAt) (*Reader, error) {
+	r := &Reader{ra: ra}
+	if _, ok := ra.(Slicer); ok {
+		r.slicer = true
+	} else {
+		r.buf = make([]byte, lenHeader)
+	}
 	if err := r.setHeader(); err != nil {
 		return nil, err
 	}
+	// resize the buffer to 4096 if sector size isn't 512
+	if !r.slicer && int(sectorSize) > len(r.buf) {
+		r.buf = make([]byte, sectorSize)
+	}
+	if err := r.setDifats(); err != nil {
+		return nil, err
+	}
+
 	if err := r.setDirEntries(); err != nil {
 		return nil, err
 	}
 	if err := r.setMiniStream(); err != nil {
 		return nil, err
 	}
-	r.iter = r.traverse(0, 0)
-	rootIdx := <-r.iter
-	root := r.entries[rootIdx[0]]
+	if err := r.traverse(); err != nil {
+		return nil, err
+	}
+	root := r.Entries[r.entry]
 	root.fn(root)
 	r.ID = root.ID
 	r.Created = root.Created
@@ -163,26 +175,11 @@ func New(rs io.ReadSeeker) (*Reader, error) {
 }
 
 func (r *Reader) Next() (*DirectoryEntry, error) {
-	e, ok := <-r.iter
-	if !ok {
+	r.entry++
+	if r.entry >= len(r.Entries) {
 		return nil, io.EOF
 	}
-	var d int
-	r.entry, d = e[0], e[1]
-	if r.entry < 0 {
-		return nil, ErrBadDir
-	}
-	entry := r.entries[r.entry]
-	entry.fn(entry)
-	d-- // ignore root
-	if d > len(r.path) {
-		r.path = append(r.path, r.prev)
-	}
-	if d < len(r.path) {
-		r.path = r.path[:d]
-	}
-	r.prev = entry.Name
-	entry.Path = r.path
+	entry := r.Entries[r.Indexes[r.entry]]
 	if entry.Stream {
 		var mini bool
 		if entry.Size < miniStreamCutoffSize {
@@ -197,7 +194,7 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry == 0 || !r.entries[r.entry].Stream {
+	if r.entry == 0 || !r.Entries[r.Indexes[r.entry]].Stream {
 		return 0, ErrNoStream
 	}
 	if len(r.stream) == 0 {
@@ -205,27 +202,28 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	}
 	stream, sz := r.popStream(len(b))
 	var idx int64
+	var i int
 	for _, v := range stream {
 		jdx := idx + v[1]
 		if idx < 0 || jdx < idx || jdx > int64(len(b)) {
 			return 0, ErrRead
 		}
-		err := r.rawReadAt(b[idx:jdx], v[0])
+		j, err := r.ra.ReadAt(b[idx:jdx], v[0])
+		i = i + j
 		if err != nil {
-			return 0, err
+			return i, ErrRead
 		}
 		idx += v[1]
 	}
 	return sz, nil
 }
 
-// close off the traverse goroutine
+// API change - this func will be removed (syncronised with next major release of siegfried)
 func (r *Reader) Quit() error {
-	var err error
-	for e := range r.iter {
-		if e[0] < 0 {
-			err = ErrBadDir
-		}
-	}
-	return err
+	return nil
+}
+
+// Slicer interface enables MSCFB to avoid copying bytes by getting a byte slice directly from the underlying reader
+type Slicer interface {
+	Slice(offset int, length int) ([]byte, error)
 }

@@ -61,8 +61,6 @@ var (
 			directoryEntryFields: &directoryEntryFields{LeftSibID: noStream, RightSibID: noStream, ChildID: noStream},
 		},
 	}
-	expect  = []int{0, 1, 2, 4, 5, 8, 9, 11, 6, 3, 7, 10}
-	expectd = []int{0, 1, 1, 2, 2, 3, 3, 4, 2, 1, 2, 3}
 )
 
 func equals(a, b []int) bool {
@@ -110,25 +108,21 @@ func testFile(t *testing.T, path string) {
 
 func TestTraverse(t *testing.T) {
 	r := new(Reader)
-	r.entries = entries
-	r.iter = r.traverse(0, 0)
-	r.path = make([]string, 0, 5)
-	indexes := make([]int, 0)
-	depths := make([]int, 0)
-	for {
-		e, ok := <-r.iter
-		if !ok {
-			break
+	r.Entries = entries
+	if r.traverse() != nil {
+		t.Error("Error traversing")
+	}
+	expect := []int{0, 1, 2, 4, 5, 8, 9, 11, 6, 3, 7, 10}
+	for i, v := range r.Indexes {
+		if v != expect[i] {
+			t.Errorf("Error traversing: expecting %d at index %d; got %d", expect[i], i, v)
 		}
-		i, d := e[0], e[1]
-		indexes = append(indexes, i)
-		depths = append(depths, d)
 	}
-	if !equals(indexes, expect) {
-		t.Errorf("Error traversing, bad index: %v; expecting: %v", indexes, expect)
+	if r.Entries[10].Path[0] != "Charlie" {
+		t.Errorf("Error traversing: expecting Charlie got %s", r.Entries[10].Path[0])
 	}
-	if !equals(depths, expectd) {
-		t.Errorf("Error traversing, bad depths: %v; expecting: %v", depths, expectd)
+	if r.Entries[10].Path[1] != "Golf" {
+		t.Errorf("Error traversing: expecting Golf got %s", r.Entries[10].Path[1])
 	}
 }
 

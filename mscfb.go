@@ -126,17 +126,14 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 
 // Reader provides sequential access to the contents of a compound file
 type Reader struct {
-	slicer   bool
-	buf      []byte
-	header   *header
-	Entries  []*DirectoryEntry
-	entry    int
-	Indexes  []int
-	ra       io.ReaderAt
-	stream   [][2]int64 // contains file offsets for the current stream and lengths
-	ID       string     // CLSID of root directory object
-	Created  time.Time
-	Modified time.Time
+	slicer  bool
+	buf     []byte
+	header  *header
+	Entries []*DirectoryEntry
+	entry   int
+	indexes []int
+	ra      io.ReaderAt
+	stream  [][2]int64 // contains file offsets for the current stream and lengths
 }
 
 func New(ra io.ReaderAt) (*Reader, error) {
@@ -168,10 +165,19 @@ func New(ra io.ReaderAt) (*Reader, error) {
 	}
 	root := r.Entries[r.entry]
 	root.fn(root)
-	r.ID = root.ID
-	r.Created = root.Created
-	r.Modified = root.Modified
 	return r, nil
+}
+
+func (r *Reader) ID() string {
+	return r.Entries[0].ID()
+}
+
+func (r *Reader) Created() time.Time {
+	return r.Entries[0].Created()
+}
+
+func (r *Reader) Modified() time.Time {
+	return r.Entries[0].Modified()
 }
 
 func (r *Reader) Next() (*DirectoryEntry, error) {
@@ -179,13 +185,13 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 	if r.entry >= len(r.Entries) {
 		return nil, io.EOF
 	}
-	entry := r.Entries[r.Indexes[r.entry]]
+	entry := r.Entries[r.indexes[r.entry]]
 	if entry.Stream {
 		var mini bool
 		if entry.Size < miniStreamCutoffSize {
 			mini = true
 		}
-		err := r.setStream(entry.StartingSectorLoc, entry.Size, mini)
+		err := r.setStream(entry.startingSectorLoc, entry.Size, mini)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +200,7 @@ func (r *Reader) Next() (*DirectoryEntry, error) {
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry == 0 || !r.Entries[r.Indexes[r.entry]].Stream {
+	if r.entry == 0 || !r.Entries[r.indexes[r.entry]].Stream {
 		return 0, ErrNoStream
 	}
 	if len(r.stream) == 0 {

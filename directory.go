@@ -16,6 +16,8 @@ package mscfb
 
 import (
 	"encoding/binary"
+	"io"
+	"os"
 	"time"
 	"unicode"
 	"unicode/utf16"
@@ -26,9 +28,9 @@ import (
 //objectType types
 const (
 	unknown     uint8 = 0x0 // this means unallocated - typically zeroed dir entries
-	storage     uint8 = 0x1
-	stream      uint8 = 0x2
-	rootStorage uint8 = 0x5
+	storage     uint8 = 0x1 // this means dir
+	stream      uint8 = 0x2 // this means file
+	rootStorage uint8 = 0x5 // this means root
 )
 
 // color flags
@@ -76,26 +78,89 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 }
 
 // Represents a DirectoryEntry
-type DirectoryEntry struct {
+type File struct {
 	Name    string
 	Initial uint16 // the first character in the name (identifies special streams such as MSOLEPS property sets)
 	Path    []string
-	fn      dirFixer // to allow mocking in test
-	Stream  bool     // does the entry have a stream?
-	Size    uint64   // size of stream
+	Size    uint64     // size of stream
+	stream  [][2]int64 // contains file offsets for the current stream and lengths
 	*directoryEntryFields
+	r *Reader
 }
 
-func (d *DirectoryEntry) ID() string {
-	return d.clsid.String()
+type fileInfo struct{ *File }
+
+func (fi fileInfo) Name() string { return fi.File.Name }
+func (fi fileInfo) Size() int64 {
+	if fi.objectType != stream {
+		return 0
+	}
+	return int64(fi.File.Size)
+}
+func (fi fileInfo) IsDir() bool        { return fi.Mode().IsDir() }
+func (fi fileInfo) ModTime() time.Time { return fi.Modified() }
+func (fi fileInfo) Mode() os.FileMode  { return fi.File.Mode() }
+func (fi fileInfo) Sys() interface{}   { return nil }
+
+func (f *File) FileInfo() os.FileInfo {
+	return fileInfo{f}
 }
 
-func (d *DirectoryEntry) Created() time.Time {
-	return d.create.Time()
+func (f *File) ID() string {
+	return f.clsid.String()
 }
 
-func (d *DirectoryEntry) Modified() time.Time {
-	return d.modify.Time()
+func (f *File) Created() time.Time {
+	return f.create.Time()
+}
+
+func (f *File) Modified() time.Time {
+	return f.modify.Time()
+}
+
+func (f *File) Mode() os.FileMode {
+	if f.objectType != stream {
+		return os.ModeDir | 0777
+	}
+	return 0666
+}
+
+func (f *File) Read(b []byte) (n int, err error) {
+	if f.objectType != stream || f.Size < 1 {
+		return 0, io.EOF
+	}
+	// set the stream if hasn't been done yet
+	if f.stream == nil {
+		var mini bool
+		if f.Size < miniStreamCutoffSize {
+			mini = true
+		}
+		str, err := f.r.stream(f.startingSectorLoc, f.Size, mini)
+		if err != nil {
+			return 0, err
+		}
+		f.stream = str
+	}
+	// now do the read
+	str, sz := f.popStream(len(b))
+	var idx int64
+	var i int
+	for _, v := range str {
+		jdx := idx + v[1]
+		if idx < 0 || jdx < idx || jdx > int64(len(b)) {
+			return 0, ErrRead
+		}
+		j, err := f.r.ra.ReadAt(b[idx:jdx], v[0])
+		i = i + j
+		if err != nil {
+			return i, ErrRead
+		}
+		idx += v[1]
+	}
+	if sz < len(b) {
+		return sz, io.EOF
+	}
+	return sz, nil
 }
 
 func (r *Reader) setDirEntries() error {
@@ -103,7 +168,7 @@ func (r *Reader) setDirEntries() error {
 	if r.header.numDirectorySectors > 0 {
 		c = int(r.header.numDirectorySectors)
 	}
-	entries := make([]*DirectoryEntry, 0, c)
+	fs := make([]*File, 0, c)
 	num := int(sectorSize / 128)
 	sn := r.header.directorySectorLoc
 	for sn != endOfChain {
@@ -113,10 +178,11 @@ func (r *Reader) setDirEntries() error {
 			return ErrRead
 		}
 		for i := 0; i < num; i++ {
-			entry := &DirectoryEntry{fn: fixDir(r.header.majorVersion)}
-			entry.directoryEntryFields = makeDirEntry(buf[i*128:])
-			if entry.directoryEntryFields.objectType != unknown {
-				entries = append(entries, entry)
+			f := &File{r: r}
+			f.directoryEntryFields = makeDirEntry(buf[i*128:])
+			if f.directoryEntryFields.objectType != unknown {
+				fixFile(r.header.majorVersion, f)
+				fs = append(fs, f)
 			}
 		}
 		if nsn, err := r.findNext(sn, false); err != nil {
@@ -125,72 +191,64 @@ func (r *Reader) setDirEntries() error {
 			sn = nsn
 		}
 	}
-	r.Entries = entries
+	r.File = fs
 	return nil
 }
 
-type dirFixer func(e *DirectoryEntry)
-
-func fixDir(v uint16) dirFixer {
-	return func(e *DirectoryEntry) {
-		fixName(e)
-		// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
-		if v > 3 {
-			e.Size = binary.LittleEndian.Uint64(e.streamSize[:])
-		} else {
-			e.Size = uint64(binary.LittleEndian.Uint32(e.streamSize[:4]))
-		}
-		if e.objectType == stream && e.startingSectorLoc <= maxRegSect && e.Size > 0 {
-			e.Stream = true
-		}
+func fixFile(v uint16, f *File) {
+	fixName(f)
+	// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
+	if v > 3 {
+		f.Size = binary.LittleEndian.Uint64(f.streamSize[:])
+	} else {
+		f.Size = uint64(binary.LittleEndian.Uint32(f.streamSize[:4]))
 	}
 }
 
-func fixName(e *DirectoryEntry) {
+func fixName(f *File) {
 	nlen := 0
-	if e.nameLength > 2 {
+	if f.nameLength > 2 {
 		// The length MUST be a multiple of 2, and include the terminating null character in the count.
-		nlen = int(e.nameLength/2 - 1)
-	} else if e.nameLength > 0 {
+		nlen = int(f.nameLength/2 - 1)
+	} else if f.nameLength > 0 {
 		nlen = 1
 	}
 	if nlen > 0 {
-		e.Initial = e.rawName[0]
+		f.Initial = f.rawName[0]
 		slen := 0
-		if !unicode.IsPrint(rune(e.Initial)) {
+		if !unicode.IsPrint(rune(f.Initial)) {
 			slen = 1
 		}
-		e.Name = string(utf16.Decode(e.rawName[slen:nlen]))
+		f.Name = string(utf16.Decode(f.rawName[slen:nlen]))
 	}
 }
 
 func (r *Reader) traverse() error {
-	r.indexes = make([]int, len(r.Entries))
+	r.indexes = make([]int, len(r.File))
 	var idx int
 	var recurse func(i int, path []string)
 	var err error
 	recurse = func(i int, path []string) {
-		if i < 0 || i > len(r.Entries)-1 {
+		if i < 0 || i >= len(r.File) {
 			err = ErrBadDir
 			return
 		}
-		entry := r.Entries[i]
-		if entry.leftSibID != noStream {
-			recurse(int(entry.leftSibID), path)
+		file := r.File[i]
+		if file.leftSibID != noStream {
+			recurse(int(file.leftSibID), path)
 		}
-		entry.fn(entry)
 		r.indexes[idx] = i
-		entry.Path = path
+		file.Path = path
 		idx++
-		if entry.childID != noStream {
+		if file.childID != noStream {
 			if i > 0 {
-				recurse(int(entry.childID), append(path, entry.Name))
+				recurse(int(file.childID), append(path, file.Name))
 			} else {
-				recurse(int(entry.childID), path)
+				recurse(int(file.childID), path)
 			}
 		}
-		if entry.rightSibID != noStream {
-			recurse(int(entry.rightSibID), path)
+		if file.rightSibID != noStream {
+			recurse(int(file.rightSibID), path)
 		}
 		return
 	}

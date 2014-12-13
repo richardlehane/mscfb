@@ -7,57 +7,46 @@ import (
 )
 
 var (
-	testDoc = "test/test.doc"
-	testXls = "test/test.xls"
-	testPpt = "test/test.ppt"
-	testMsg = "test/test.msg"
-	entries = []*DirectoryEntry{
-		&DirectoryEntry{Name: "Root Node",
-			fn:                   mockFN,
+	novPapPlan = "test/novpapplan.doc"
+	testDoc    = "test/test.doc"
+	testXls    = "test/test.xls"
+	testPpt    = "test/test.ppt"
+	testMsg    = "test/test.msg"
+	entries    = []*File{
+		&File{Name: "Root Node",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 1},
 		},
-		&DirectoryEntry{Name: "Alpha",
-			fn:                   mockFN,
+		&File{Name: "Alpha",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: 2, childID: noStream},
 		},
-		&DirectoryEntry{Name: "Bravo",
-			fn:                   mockFN,
+		&File{Name: "Bravo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: 3, childID: 5},
 		},
-		&DirectoryEntry{Name: "Charlie",
-			fn:                   mockFN,
+		&File{Name: "Charlie",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 7},
 		},
-		&DirectoryEntry{Name: "Delta",
-			fn:                   mockFN,
+		&File{Name: "Delta",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&DirectoryEntry{Name: "Echo",
-			fn:                   mockFN,
+		&File{Name: "Echo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: 4, rightSibID: 6, childID: 9},
 		},
-		&DirectoryEntry{Name: "Foxtrot",
-			fn:                   mockFN,
+		&File{Name: "Foxtrot",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&DirectoryEntry{Name: "Golf",
-			fn:                   mockFN,
+		&File{Name: "Golf",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 10},
 		},
-		&DirectoryEntry{Name: "Hotel",
-			fn:                   mockFN,
+		&File{Name: "Hotel",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&DirectoryEntry{Name: "Indigo",
-			fn:                   mockFN,
+		&File{Name: "Indigo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: 8, rightSibID: noStream, childID: 11},
 		},
-		&DirectoryEntry{Name: "Jello",
-			fn:                   mockFN,
+		&File{Name: "Jello",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&DirectoryEntry{Name: "Kilo",
-			fn:                   mockFN,
+		&File{Name: "Kilo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
 	}
@@ -75,8 +64,6 @@ func equals(a, b []int) bool {
 	return true
 }
 
-func mockFN(e *DirectoryEntry) {}
-
 func empty(sl []byte) bool {
 	for _, v := range sl {
 		if v != 0 {
@@ -91,12 +78,12 @@ func testFile(t *testing.T, path string) {
 	defer file.Close()
 	doc, err := New(file)
 	if err != nil {
-		t.Errorf("Error opening file; Returns error: ", err)
+		t.Fatalf("Error opening file; Returns error: %v", err)
 	}
 	for entry, _ := doc.Next(); entry != nil; entry, _ = doc.Next() {
 		buf := make([]byte, 512)
 		_, err := doc.Read(buf)
-		if err != nil && err != ErrNoStream && err != io.EOF {
+		if err != nil && err != io.EOF {
 			t.Errorf("Error reading entry name, %v", entry.Name)
 		}
 		if len(entry.Name) < 1 {
@@ -108,7 +95,7 @@ func testFile(t *testing.T, path string) {
 
 func TestTraverse(t *testing.T) {
 	r := new(Reader)
-	r.Entries = entries
+	r.File = entries
 	if r.traverse() != nil {
 		t.Error("Error traversing")
 	}
@@ -118,26 +105,30 @@ func TestTraverse(t *testing.T) {
 			t.Errorf("Error traversing: expecting %d at index %d; got %d", expect[i], i, v)
 		}
 	}
-	if r.Entries[10].Path[0] != "Charlie" {
-		t.Errorf("Error traversing: expecting Charlie got %s", r.Entries[10].Path[0])
+	if r.File[10].Path[0] != "Charlie" {
+		t.Errorf("Error traversing: expecting Charlie got %s", r.File[10].Path[0])
 	}
-	if r.Entries[10].Path[1] != "Golf" {
-		t.Errorf("Error traversing: expecting Golf got %s", r.Entries[10].Path[1])
+	if r.File[10].Path[1] != "Golf" {
+		t.Errorf("Error traversing: expecting Golf got %s", r.File[10].Path[1])
 	}
+}
+
+func TestNovPapPlan(t *testing.T) {
+	testFile(t, novPapPlan)
 }
 
 func TestWord(t *testing.T) {
 	testFile(t, testDoc)
 }
 
-func TestXls(t *testing.T) {
-	testFile(t, testXls)
+func TestMsg(t *testing.T) {
+	testFile(t, testMsg)
 }
 
 func TestPpt(t *testing.T) {
 	testFile(t, testPpt)
 }
 
-func TestMsg(t *testing.T) {
-	testFile(t, testMsg)
+func TestXls(t *testing.T) {
+	testFile(t, testXls)
 }

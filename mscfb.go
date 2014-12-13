@@ -42,10 +42,10 @@ import (
 )
 
 var (
-	ErrFormat   = errors.New("mscfb: not a valid compound file")
-	ErrRead     = errors.New("mscfb: error reading compound file")
-	ErrBadDir   = errors.New("mscfb: error traversing directory structure")
-	ErrNoStream = errors.New("mscfb: storage object does not have a child stream")
+	ErrFormat = errors.New("mscfb: not a valid compound file")
+	ErrRead   = errors.New("mscfb: error reading compound file")
+	ErrBadDir = errors.New("mscfb: error traversing directory structure")
+	ErrSeek   = errors.New("mscfb: error calculating offset")
 )
 
 var sectorSize uint32
@@ -105,12 +105,12 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	var sect uint32
 	if mini {
 		if index < 0 || index >= len(r.header.miniFatLocs) {
-			return 0, ErrBadDir
+			return 0, ErrSeek
 		}
 		sect = r.header.miniFatLocs[index]
 	} else {
 		if index < 0 || index >= len(r.header.difats) {
-			return 0, ErrBadDir
+			return 0, ErrSeek
 		}
 		sect = r.header.difats[index]
 	}
@@ -129,11 +129,10 @@ type Reader struct {
 	slicer  bool
 	buf     []byte
 	header  *header
-	Entries []*DirectoryEntry
+	File    []*File
 	entry   int
 	indexes []int
 	ra      io.ReaderAt
-	stream  [][2]int64 // contains file offsets for the current stream and lengths
 }
 
 func New(ra io.ReaderAt) (*Reader, error) {
@@ -153,7 +152,6 @@ func New(ra io.ReaderAt) (*Reader, error) {
 	if err := r.setDifats(); err != nil {
 		return nil, err
 	}
-
 	if err := r.setDirEntries(); err != nil {
 		return nil, err
 	}
@@ -163,65 +161,34 @@ func New(ra io.ReaderAt) (*Reader, error) {
 	if err := r.traverse(); err != nil {
 		return nil, err
 	}
-	root := r.Entries[r.entry]
-	root.fn(root)
 	return r, nil
 }
 
 func (r *Reader) ID() string {
-	return r.Entries[0].ID()
+	return r.File[0].ID()
 }
 
 func (r *Reader) Created() time.Time {
-	return r.Entries[0].Created()
+	return r.File[0].Created()
 }
 
 func (r *Reader) Modified() time.Time {
-	return r.Entries[0].Modified()
+	return r.File[0].Modified()
 }
 
-func (r *Reader) Next() (*DirectoryEntry, error) {
+func (r *Reader) Next() (*File, error) {
 	r.entry++
-	if r.entry >= len(r.Entries) {
+	if r.entry >= len(r.File) {
 		return nil, io.EOF
 	}
-	entry := r.Entries[r.indexes[r.entry]]
-	if entry.Stream {
-		var mini bool
-		if entry.Size < miniStreamCutoffSize {
-			mini = true
-		}
-		err := r.setStream(entry.startingSectorLoc, entry.Size, mini)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return entry, nil
+	return r.File[r.indexes[r.entry]], nil
 }
 
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry == 0 || !r.Entries[r.indexes[r.entry]].Stream {
-		return 0, ErrNoStream
-	}
-	if len(r.stream) == 0 {
+	if r.entry >= len(r.File) {
 		return 0, io.EOF
 	}
-	stream, sz := r.popStream(len(b))
-	var idx int64
-	var i int
-	for _, v := range stream {
-		jdx := idx + v[1]
-		if idx < 0 || jdx < idx || jdx > int64(len(b)) {
-			return 0, ErrRead
-		}
-		j, err := r.ra.ReadAt(b[idx:jdx], v[0])
-		i = i + j
-		if err != nil {
-			return i, ErrRead
-		}
-		idx += v[1]
-	}
-	return sz, nil
+	return r.File[r.indexes[r.entry]].Read(b)
 }
 
 // API change - this func will be removed (syncronised with next major release of siegfried)

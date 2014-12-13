@@ -17,7 +17,7 @@ package mscfb
 // set the ministream FAT and sector slices in the header
 func (r *Reader) setMiniStream() error {
 	// do nothing if there is no ministream
-	if r.Entries[0].startingSectorLoc == endOfChain || r.header.miniFatSectorLoc == endOfChain {
+	if r.File[0].startingSectorLoc == endOfChain || r.header.miniFatSectorLoc == endOfChain {
 		return nil
 	}
 	// build a slice of minifat sectors (akin to the DIFAT slice)
@@ -34,7 +34,7 @@ func (r *Reader) setMiniStream() error {
 	// build a slice of ministream sectors
 	c = int(sectorSize / 4 * r.header.numMiniFatSectors)
 	r.header.miniStreamLocs = make([]uint32, 0, c)
-	sn := r.Entries[0].startingSectorLoc
+	sn := r.File[0].startingSectorLoc
 	var err error
 	for sn != endOfChain {
 		r.header.miniStreamLocs = append(r.header.miniStreamLocs, sn)
@@ -65,7 +65,7 @@ func truncate(locs [][2]int64, sz uint64) [][2]int64 {
 	return locs
 }
 
-func (r *Reader) setStream(sn uint32, sz uint64, mini bool) error {
+func (r *Reader) stream(sn uint32, sz uint64, mini bool) ([][2]int64, error) {
 	var l int
 	var s int64
 	if mini {
@@ -82,35 +82,33 @@ func (r *Reader) setStream(sn uint32, sz uint64, mini bool) error {
 		chain = append(chain, [2]int64{offset, s})
 		sn, err = r.findNext(sn, mini)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if sn == endOfChain {
-			r.stream = compressChain(truncate(chain, sz))
-			return nil
+			return compressChain(truncate(chain, sz)), nil
 		}
 		offset = r.fileOffset(sn, mini)
 	}
-	r.stream = compressChain(truncate(chain, sz))
-	return nil
+	return compressChain(truncate(chain, sz)), nil
 }
 
-func (r *Reader) popStream(sz int) ([][2]int64, int) {
+func (f *File) popStream(sz int) ([][2]int64, int) {
 	var total int64
 	s := int64(sz)
-	for i, v := range r.stream {
+	for i, v := range f.stream {
 		total = total + v[1]
 		if s < total {
 			dif := total - s
 			pop := make([][2]int64, i+1)
-			copy(pop, r.stream[:i+1])
+			copy(pop, f.stream[:i+1])
 			pop[i][1] = pop[i][1] - dif
-			r.stream = r.stream[i:]
-			r.stream[0][0] = pop[i][0] + pop[i][1]
-			r.stream[0][1] = dif
+			f.stream = f.stream[i:]
+			f.stream[0][0] = pop[i][0] + pop[i][1]
+			f.stream[0][1] = dif
 			return pop, sz
 		}
 	}
-	pop := r.stream
-	r.stream = make([][2]int64, 0)
+	pop := f.stream
+	f.stream = [][2]int64{}
 	return pop, int(total)
 }

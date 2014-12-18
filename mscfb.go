@@ -26,7 +26,7 @@
 //	 }
 //	 for entry, err := doc.Next(); err == nil; entry, err = doc.Next() {
 //     buf := make([]byte, 512)
-//     i, _ := doc.Read(buf)
+//     i, _ := entry.Read(buf)
 //     if i > 0 {
 //       fmt.Println(buf[:i])
 //     }
@@ -73,7 +73,7 @@ const (
 
 func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 	if r.slicer {
-		b, err := r.ra.(Slicer).Slice(int(offset), length)
+		b, err := r.ra.(slicer).Slice(int(offset), length)
 		if err != nil {
 			return nil, ErrRead
 		}
@@ -124,20 +124,21 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	return binary.LittleEndian.Uint32(buf), nil
 }
 
-// Reader provides sequential access to the contents of a compound file
+// Reader provides sequential access to the contents of a MS compound file (MSCFB)
 type Reader struct {
 	slicer  bool
 	buf     []byte
 	header  *header
-	File    []*File
+	File    []*File // File is a slice of directory entries. Not necessarily in correct order. Use Next() for order.
 	entry   int
 	indexes []int
 	ra      io.ReaderAt
 }
 
+// New returns a MSCFB reader
 func New(ra io.ReaderAt) (*Reader, error) {
 	r := &Reader{ra: ra}
-	if _, ok := ra.(Slicer); ok {
+	if _, ok := ra.(slicer); ok {
 		r.slicer = true
 	} else {
 		r.buf = make([]byte, lenHeader)
@@ -164,18 +165,23 @@ func New(ra io.ReaderAt) (*Reader, error) {
 	return r, nil
 }
 
+// ID returns the CLSID (class ID) field from the root directory entry
 func (r *Reader) ID() string {
 	return r.File[0].ID()
 }
 
+// Created returns the created field from the root directory entry
 func (r *Reader) Created() time.Time {
 	return r.File[0].Created()
 }
 
+// Modified returns the last modified field from the root directory entry
 func (r *Reader) Modified() time.Time {
 	return r.File[0].Modified()
 }
 
+// Next iterates to the next directory entry.
+// This isn't necessarily an adjacent *File within the File slice, but is based on the Left Sibling, Right Sibling and Child information in directory entries.
 func (r *Reader) Next() (*File, error) {
 	r.entry++
 	if r.entry >= len(r.File) {
@@ -184,6 +190,7 @@ func (r *Reader) Next() (*File, error) {
 	return r.File[r.indexes[r.entry]], nil
 }
 
+// Read the current directory entry
 func (r *Reader) Read(b []byte) (n int, err error) {
 	if r.entry >= len(r.File) {
 		return 0, io.EOF
@@ -191,12 +198,7 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	return r.File[r.indexes[r.entry]].Read(b)
 }
 
-// API change - this func will be removed (syncronised with next major release of siegfried)
-func (r *Reader) Quit() error {
-	return nil
-}
-
-// Slicer interface enables MSCFB to avoid copying bytes by getting a byte slice directly from the underlying reader
-type Slicer interface {
+// Slicer interface avoids a copy by getting a byte slice directly from the underlying reader
+type slicer interface {
 	Slice(offset int, length int) ([]byte, error)
 }

@@ -7,12 +7,12 @@ import (
 )
 
 var (
-	novPapPlan = "test/novpapplan.doc"
-	testDoc    = "test/test.doc"
-	testXls    = "test/test.xls"
-	testPpt    = "test/test.ppt"
-	testMsg    = "test/test.msg"
-	entries    = []*File{
+	novPapPlan  = "test/novpapplan.doc"
+	testDoc     = "test/test.doc"
+	testXls     = "test/test.xls"
+	testPpt     = "test/test.ppt"
+	testMsg     = "test/test.msg"
+	testEntries = []*File{
 		&File{Name: "Root Node",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 1},
 		},
@@ -80,6 +80,9 @@ func testFile(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("Error opening file; Returns error: %v", err)
 	}
+	if len(doc.File) < 3 {
+		t.Fatalf("Expecting several directory entries, only got %d", len(doc.File))
+	}
 	for entry, _ := doc.Next(); entry != nil; entry, _ = doc.Next() {
 		buf := make([]byte, 512)
 		_, err := doc.Read(buf)
@@ -95,7 +98,7 @@ func testFile(t *testing.T, path string) {
 
 func TestTraverse(t *testing.T) {
 	r := new(Reader)
-	r.File = entries
+	r.File = testEntries
 	if r.traverse() != nil {
 		t.Error("Error traversing")
 	}

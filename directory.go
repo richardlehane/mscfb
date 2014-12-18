@@ -77,11 +77,11 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 	return d
 }
 
-// Represents a DirectoryEntry
+// File represents a MSCFB directory entry
 type File struct {
-	Name    string
-	Initial uint16 // the first character in the name (identifies special streams such as MSOLEPS property sets)
-	Path    []string
+	Name    string     // stream or directory name
+	Initial uint16     // the first character in the name (identifies special streams such as MSOLEPS property sets)
+	Path    []string   // file path
 	Size    uint64     // size of stream
 	stream  [][2]int64 // contains file offsets for the current stream and lengths
 	*directoryEntryFields
@@ -97,34 +97,40 @@ func (fi fileInfo) Size() int64 {
 	}
 	return int64(fi.File.Size)
 }
-func (fi fileInfo) IsDir() bool        { return fi.Mode().IsDir() }
+func (fi fileInfo) IsDir() bool        { return fi.mode().IsDir() }
 func (fi fileInfo) ModTime() time.Time { return fi.Modified() }
-func (fi fileInfo) Mode() os.FileMode  { return fi.File.Mode() }
+func (fi fileInfo) Mode() os.FileMode  { return fi.File.mode() }
 func (fi fileInfo) Sys() interface{}   { return nil }
 
-func (f *File) FileInfo() os.FileInfo {
-	return fileInfo{f}
-}
-
-func (f *File) ID() string {
-	return f.clsid.String()
-}
-
-func (f *File) Created() time.Time {
-	return f.create.Time()
-}
-
-func (f *File) Modified() time.Time {
-	return f.modify.Time()
-}
-
-func (f *File) Mode() os.FileMode {
+func (f *File) mode() os.FileMode {
 	if f.objectType != stream {
 		return os.ModeDir | 0777
 	}
 	return 0666
 }
 
+// FileInfo for this directory entry. Useful for IsDir() (whether a directory entry is a stream (file) or a storage object (dir))
+func (f *File) FileInfo() os.FileInfo {
+	return fileInfo{f}
+}
+
+// ID returns this directory entry's CLSID field
+func (f *File) ID() string {
+	return f.clsid.String()
+}
+
+// Created returns this directory entry's created field
+func (f *File) Created() time.Time {
+	return f.create.Time()
+}
+
+// Created returns this directory entry's modified field
+func (f *File) Modified() time.Time {
+	return f.modify.Time()
+}
+
+// Read this directory entry
+// Returns 0, io.EOF if no stream is available (i.e. for a storage object)
 func (f *File) Read(b []byte) (n int, err error) {
 	if f.objectType != stream || f.Size < 1 {
 		return 0, io.EOF
@@ -206,21 +212,19 @@ func fixFile(v uint16, f *File) {
 }
 
 func fixName(f *File) {
-	nlen := 0
-	if f.nameLength > 2 {
-		// The length MUST be a multiple of 2, and include the terminating null character in the count.
-		nlen = int(f.nameLength/2 - 1)
-	} else if f.nameLength > 0 {
-		nlen = 1
+	// From the spec:
+	// "The length [name] MUST be a multiple of 2, and include the terminating null character in the count.
+	// This length MUST NOT exceed 64, the maximum size of the Directory Entry Name field."
+	if f.nameLength < 4 || f.nameLength > 64 {
+		return
 	}
-	if nlen > 0 {
-		f.Initial = f.rawName[0]
-		slen := 0
-		if !unicode.IsPrint(rune(f.Initial)) {
-			slen = 1
-		}
-		f.Name = string(utf16.Decode(f.rawName[slen:nlen]))
+	nlen := int(f.nameLength/2 - 1)
+	f.Initial = f.rawName[0]
+	var slen int
+	if !unicode.IsPrint(rune(f.Initial)) {
+		slen = 1
 	}
+	f.Name = string(utf16.Decode(f.rawName[slen:nlen]))
 }
 
 func (r *Reader) traverse() error {

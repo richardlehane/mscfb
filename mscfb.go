@@ -23,8 +23,8 @@
 //   doc, err := mscfb.New(file)
 //   if err != nil {
 //     log.Fatal(err)
-//	 }
-//	 for entry, err := doc.Next(); err == nil; entry, err = doc.Next() {
+//   }
+//   for entry, err := doc.Next(); err == nil; entry, err = doc.Next() {
 //     buf := make([]byte, 512)
 //     i, _ := entry.Read(buf)
 //     if i > 0 {

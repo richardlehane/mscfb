@@ -73,7 +73,7 @@ const (
 
 func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 	if r.slicer {
-		b, err := r.ra.(slicer).Slice(int(offset), length)
+		b, err := r.ra.(slicer).Slice(offset, length)
 		if err != nil {
 			return nil, ErrRead
 		}
@@ -200,5 +200,5 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 
 // Slicer interface avoids a copy by getting a byte slice directly from the underlying reader
 type slicer interface {
-	Slice(offset int, length int) ([]byte, error)
+	Slice(offset int64, length int) ([]byte, error)
 }

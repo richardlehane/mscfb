@@ -42,10 +42,11 @@ import (
 )
 
 var (
-	ErrFormat = errors.New("mscfb: not a valid compound file")
-	ErrRead   = errors.New("mscfb: error reading compound file")
-	ErrBadDir = errors.New("mscfb: error traversing directory structure")
-	ErrSeek   = errors.New("mscfb: error calculating offset")
+	ErrFormat     = errors.New("mscfb: not a valid compound file")
+	ErrRead       = errors.New("mscfb: error reading compound file")
+	ErrBadDir     = errors.New("mscfb: error traversing directory structure")
+	ErrSeek       = errors.New("mscfb: error calculating offset")
+	ErrSectorSize = errors.New("mscfb: invalid sector size")
 )
 
 var sectorSize uint32

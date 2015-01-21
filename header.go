@@ -99,6 +99,9 @@ func (r *Reader) setHeader() error {
 	if r.header.signature != signature {
 		return ErrFormat
 	}
-	setSectorSize(r.header.sectorSize)
-	return nil
+	if r.header.sectorSize == 0x0009 || r.header.sectorSize == 0x000c {
+		setSectorSize(r.header.sectorSize)
+		return nil
+	}
+	return ErrSectorSize
 }

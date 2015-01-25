@@ -191,8 +191,11 @@ func (r *Reader) setDirEntries() error {
 				fs = append(fs, f)
 			}
 		}
-		if nsn, err := r.findNext(sn, false); err != nil {
-			return err
+		if nsn, err := r.findNext(sn, false); err != nil || nsn == sn {
+			if err != nil {
+				return err
+			}
+			return ErrBadDir
 		} else {
 			sn = nsn
 		}

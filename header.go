@@ -76,9 +76,9 @@ func (r *Reader) setDifats() error {
 		r.header.difats = n
 		off := r.header.difatSectorLoc
 		for i := 0; i < int(r.header.numDifatSectors); i++ {
-			buf, err := r.readAt(int64(off), int(sectorSize))
+			buf, err := r.readAt(r.fileOffset(off, false), int(sectorSize))
 			if err != nil {
-				return ErrRead
+				return err
 			}
 			for j := 0; j < int(sz)-1; j++ {
 				r.header.difats = append(r.header.difats, binary.LittleEndian.Uint32(buf[j*4:j*4+4]))
@@ -92,7 +92,7 @@ func (r *Reader) setDifats() error {
 func (r *Reader) setHeader() error {
 	buf, err := r.readAt(0, lenHeader)
 	if err != nil {
-		return ErrRead
+		return err
 	}
 	r.header = &header{headerFields: makeHeader(buf)}
 	// sanity check - check signature

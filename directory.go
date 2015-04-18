@@ -236,7 +236,7 @@ func (r *Reader) traverse() error {
 	var recurse func(i int, path []string)
 	var err error
 	recurse = func(i int, path []string) {
-		if i < 0 || i >= len(r.File) {
+		if i < 0 || i >= len(r.File) || idx >= len(r.indexes) {
 			err = ErrBadDir
 			return
 		}

@@ -233,16 +233,20 @@ func fixName(f *File) {
 func (r *Reader) traverse() error {
 	r.indexes = make([]int, len(r.File))
 	var idx int
-	var recurse func(i int, path []string)
+	var recurse func(int, []string)
 	var err error
 	recurse = func(i int, path []string) {
-		if i < 0 || i >= len(r.File) || idx >= len(r.indexes) {
+		if i < 0 || i >= len(r.File) {
 			err = ErrBadDir
 			return
 		}
 		file := r.File[i]
 		if file.leftSibID != noStream {
 			recurse(int(file.leftSibID), path)
+		}
+		if idx >= len(r.indexes) {
+			err = ErrBadDir
+			return
 		}
 		r.indexes[idx] = i
 		file.Path = path

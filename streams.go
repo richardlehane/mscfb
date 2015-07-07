@@ -76,8 +76,10 @@ func (r *Reader) stream(sn uint32, sz uint64, mini bool) ([][2]int64, error) {
 		s = int64(sectorSize)
 	}
 	chain := make([][2]int64, 0, l)
-	offset := r.fileOffset(sn, mini)
-	var err error
+	offset, err := r.getOffset(sn, mini)
+	if err != nil {
+		return nil, err
+	}
 	for i := 0; i < l; i++ {
 		chain = append(chain, [2]int64{offset, s})
 		sn, err = r.findNext(sn, mini)
@@ -87,7 +89,10 @@ func (r *Reader) stream(sn uint32, sz uint64, mini bool) ([][2]int64, error) {
 		if sn == endOfChain {
 			return compressChain(truncate(chain, sz)), nil
 		}
-		offset = r.fileOffset(sn, mini)
+		offset, err = r.getOffset(sn, mini)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return compressChain(truncate(chain, sz)), nil
 }

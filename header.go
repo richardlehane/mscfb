@@ -76,7 +76,7 @@ func (r *Reader) setDifats() error {
 		r.header.difats = n
 		off := r.header.difatSectorLoc
 		for i := 0; i < int(r.header.numDifatSectors); i++ {
-			buf, err := r.readAt(r.fileOffset(off, false), int(sectorSize))
+			buf, err := r.readAt(fileOffset(off), int(sectorSize))
 			if err != nil {
 				return err
 			}

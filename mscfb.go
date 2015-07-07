@@ -55,6 +55,10 @@ func setSectorSize(ss uint16) {
 	sectorSize = uint32(1 << ss)
 }
 
+func fileOffset(sn uint32) int64 {
+	return int64((sn + 1) * sectorSize)
+}
+
 const (
 	signature            uint64 = 0xE11AB1A1E011CFD0
 	miniStreamSectorSize uint32 = 64
@@ -89,14 +93,17 @@ func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 	return r.buf[:length], nil
 }
 
-func (r *Reader) fileOffset(sn uint32, mini bool) int64 {
+func (r *Reader) getOffset(sn uint32, mini bool) (int64, error) {
 	if mini {
 		num := sectorSize / 64
-		sec := sn / num
+		sec := int(sn / num)
+		if sec >= len(r.header.miniStreamLocs) {
+			return 0, ErrRead
+		}
 		dif := sn % num
-		return int64((r.header.miniStreamLocs[sec]+1)*sectorSize + dif*64)
+		return int64((r.header.miniStreamLocs[sec]+1)*sectorSize + dif*64), nil
 	}
-	return int64((sn + 1) * sectorSize)
+	return fileOffset(sn), nil
 }
 
 // check the FAT sector for the next sector in a chain
@@ -116,8 +123,7 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 		sect = r.header.difats[index]
 	}
 	fatIndex := sn % entries // find position within FAT or MiniFAT sector
-	offset := r.fileOffset(sect, false)
-	offset += int64(fatIndex * 4)
+	offset := fileOffset(sect) + int64(fatIndex*4)
 	buf, err := r.readAt(offset, 4)
 	if err != nil {
 		return 0, err

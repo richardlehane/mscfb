@@ -178,8 +178,7 @@ func (r *Reader) setDirEntries() error {
 	num := int(sectorSize / 128)
 	sn := r.header.directorySectorLoc
 	for sn != endOfChain {
-		off := r.fileOffset(sn, false)
-		buf, err := r.readAt(off, int(sectorSize))
+		buf, err := r.readAt(fileOffset(sn), int(sectorSize))
 		if err != nil {
 			return ErrRead
 		}

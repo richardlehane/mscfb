@@ -51,7 +51,10 @@ func compressChain(locs [][2]int64) [][2]int64 {
 	for i, x := 0, 0; i < l && x+1 < len(locs); i++ {
 		if locs[x][0]+locs[x][1] == locs[x+1][0] {
 			locs[x][1] = locs[x][1] + locs[x+1][1]
-			locs = append(locs[:x+1], locs[x+2:]...)
+			for j := range locs[x+1 : len(locs)-1] {
+				locs[x+1+j] = locs[j+x+2]
+			}
+			locs = locs[:len(locs)-1]
 		} else {
 			x += 1
 		}

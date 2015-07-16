@@ -9,10 +9,7 @@ func equal(a [][2]int64, b [][2]int64) bool {
 		return false
 	}
 	for i, v := range a {
-		if v[0] != b[i][0] {
-			return false
-		}
-		if v[1] != b[i][1] {
+		if v[0] != b[i][0] || v[1] != b[i][1] {
 			return false
 		}
 	}

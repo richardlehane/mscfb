@@ -62,61 +62,83 @@ func compressChain(locs [][2]int64) [][2]int64 {
 	return locs
 }
 
-func truncate(locs [][2]int64, sz uint64) [][2]int64 {
-	remainder := int64(len(locs))*locs[0][1] - int64(sz)
-	locs[len(locs)-1][1] = locs[len(locs)-1][1] - remainder
-	return locs
-}
-
-func (r *Reader) stream(sn uint32, sz uint64, mini bool) ([][2]int64, error) {
+// return offsets and lengths for read
+func (f *File) stream(sz int) ([][2]int64, error) {
+	// calculate ministream and sector size
+	var mini bool
+	if f.Size < miniStreamCutoffSize {
+		mini = true
+	}
 	var l int
-	var s int64
+	var ss int64
 	if mini {
-		l = int(sz)/64 + 1
-		s = 64
+		l = sz/64 + 2
+		ss = 64
 	} else {
-		l = int(uint32(sz)/sectorSize) + 1
-		s = int64(sectorSize)
+		l = sz/int(sectorSize) + 2
+		ss = int64(sectorSize)
 	}
-	chain := make([][2]int64, 0, l)
-	offset, err := r.getOffset(sn, mini)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < l; i++ {
-		chain = append(chain, [2]int64{offset, s})
-		sn, err = r.findNext(sn, mini)
-		if err != nil {
-			return nil, err
-		}
-		if sn == endOfChain {
-			return compressChain(truncate(chain, sz)), nil
-		}
-		offset, err = r.getOffset(sn, mini)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return compressChain(truncate(chain, sz)), nil
-}
 
-func (f *File) popStream(sz int) ([][2]int64, int) {
-	var total int64
-	s := int64(sz)
-	for i, v := range f.stream {
-		total = total + v[1]
-		if s < total {
-			dif := total - s
-			pop := make([][2]int64, i+1)
-			copy(pop, f.stream[:i+1])
-			pop[i][1] = pop[i][1] - dif
-			f.stream = f.stream[i:]
-			f.stream[0][0] = pop[i][0] + pop[i][1]
-			f.stream[0][1] = dif
-			return pop, sz
+	sectors := make([][2]int64, 0, l)
+	var i, j int
+
+	// if we have a remainder from a previous read, use it first
+	if f.rem > 0 {
+		offset, err := f.r.getOffset(f.readSector, mini)
+		if err != nil {
+			return nil, err
 		}
+		if ss-f.rem >= int64(sz) {
+			sectors = append(sectors, [2]int64{offset + f.rem, int64(sz)})
+		} else {
+			sectors = append(sectors, [2]int64{offset + f.rem, ss - f.rem})
+		}
+		if ss-f.rem <= int64(sz) {
+			f.rem = 0
+			f.readSector, err = f.r.findNext(f.readSector, mini)
+			if err != nil {
+				return nil, err
+			}
+			j += int(ss - f.rem)
+		} else {
+			f.rem += int64(sz)
+		}
+		if sectors[0][1] == int64(sz) {
+			return sectors, nil
+		}
+		if f.readSector == endOfChain {
+			return nil, ErrRead
+		}
+		i++
 	}
-	pop := f.stream
-	f.stream = [][2]int64{}
-	return pop, int(total)
+
+	for {
+		// emergency brake!
+		if i >= cap(sectors) {
+			return nil, ErrRead
+		}
+		// grab the next offset
+		offset, err := f.r.getOffset(f.readSector, mini)
+		if err != nil {
+			return nil, err
+		}
+		// check if we are at the last sector
+		if sz-j < int(ss) {
+			sectors = append(sectors, [2]int64{offset, int64(sz - j)})
+			f.rem = int64(sz - j)
+			return compressChain(sectors), nil
+		} else {
+			sectors = append(sectors, [2]int64{offset, ss})
+			j += int(ss)
+			f.readSector, err = f.r.findNext(f.readSector, mini)
+			if err != nil {
+				return nil, err
+			}
+			// we might be at the last sector if there is no remainder, if so can return
+			if j == sz {
+				return compressChain(sectors), nil
+			}
+		}
+		i++
+	}
 }

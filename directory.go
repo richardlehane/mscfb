@@ -79,11 +79,13 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 
 // File represents a MSCFB directory entry
 type File struct {
-	Name    string     // stream or directory name
-	Initial uint16     // the first character in the name (identifies special streams such as MSOLEPS property sets)
-	Path    []string   // file path
-	Size    uint64     // size of stream
-	stream  [][2]int64 // contains file offsets for the current stream and lengths
+	Name       string   // stream or directory name
+	Initial    uint16   // the first character in the name (identifies special streams such as MSOLEPS property sets)
+	Path       []string // file path
+	Size       int64    // size of stream
+	i          int64    // bytes read
+	readSector uint32   // next sector for Read
+	rem        int64    // offset in current sector remaining previous Read
 	*directoryEntryFields
 	r *Reader
 }
@@ -95,7 +97,7 @@ func (fi fileInfo) Size() int64 {
 	if fi.objectType != stream {
 		return 0
 	}
-	return int64(fi.File.Size)
+	return fi.File.Size
 }
 func (fi fileInfo) IsDir() bool        { return fi.mode().IsDir() }
 func (fi fileInfo) ModTime() time.Time { return fi.Modified() }
@@ -131,42 +133,41 @@ func (f *File) Modified() time.Time {
 
 // Read this directory entry
 // Returns 0, io.EOF if no stream is available (i.e. for a storage object)
-func (f *File) Read(b []byte) (n int, err error) {
-	if f.objectType != stream || f.Size < 1 {
+func (f *File) Read(b []byte) (int, error) {
+	if f.objectType != stream || f.Size < 1 || f.i >= f.Size {
 		return 0, io.EOF
 	}
-	// set the stream if hasn't been done yet
-	if f.stream == nil {
-		var mini bool
-		if f.Size < miniStreamCutoffSize {
-			mini = true
-		}
-		str, err := f.r.stream(f.startingSectorLoc, f.Size, mini)
-		if err != nil {
-			return 0, err
-		}
-		f.stream = str
+	sz := len(b)
+	if int64(sz) > f.Size-f.i {
+		sz = int(f.Size - f.i)
 	}
-	// now do the read
-	str, sz := f.popStream(len(b))
-	var idx int64
-	var i int
+	// get sectors and lengths for reads
+	str, err := f.stream(sz)
+	if err != nil {
+		return 0, err
+	}
+	// now read
+	var idx, i int
 	for _, v := range str {
-		jdx := idx + v[1]
-		if idx < 0 || jdx < idx || jdx > int64(len(b)) {
+		jdx := idx + int(v[1])
+		if jdx < idx || jdx > sz {
 			return 0, ErrRead
 		}
 		j, err := f.r.ra.ReadAt(b[idx:jdx], v[0])
 		i = i + j
 		if err != nil {
+			f.i += int64(i)
 			return i, ErrRead
 		}
-		idx += v[1]
+		idx = jdx
 	}
-	if sz < len(b) {
-		return sz, io.EOF
+	f.i += int64(i)
+	if i != sz {
+		err = ErrRead
+	} else if i < len(b) {
+		err = io.EOF
 	}
-	return sz, nil
+	return i, err
 }
 
 func (r *Reader) setDirEntries() error {
@@ -187,6 +188,7 @@ func (r *Reader) setDirEntries() error {
 			f.directoryEntryFields = makeDirEntry(buf[i*128:])
 			if f.directoryEntryFields.objectType != unknown {
 				fixFile(r.header.majorVersion, f)
+				f.readSector = f.startingSectorLoc
 				fs = append(fs, f)
 			}
 		}
@@ -207,9 +209,9 @@ func fixFile(v uint16, f *File) {
 	fixName(f)
 	// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
 	if v > 3 {
-		f.Size = binary.LittleEndian.Uint64(f.streamSize[:])
+		f.Size = int64(binary.LittleEndian.Uint64(f.streamSize[:]))
 	} else {
-		f.Size = uint64(binary.LittleEndian.Uint32(f.streamSize[:4]))
+		f.Size = int64(binary.LittleEndian.Uint32(f.streamSize[:4]))
 	}
 }
 

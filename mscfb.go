@@ -62,7 +62,7 @@ func fileOffset(sn uint32) int64 {
 const (
 	signature            uint64 = 0xE11AB1A1E011CFD0
 	miniStreamSectorSize uint32 = 64
-	miniStreamCutoffSize uint64 = 4096
+	miniStreamCutoffSize int64  = 4096
 	dirEntrySize         uint32 = 128 //128 bytes
 )
 

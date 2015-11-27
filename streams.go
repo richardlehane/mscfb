@@ -22,6 +22,9 @@ func (r *Reader) setMiniStream() error {
 	}
 	// build a slice of minifat sectors (akin to the DIFAT slice)
 	c := int(r.header.numMiniFatSectors)
+	if c <= 0 {
+		return ErrFormat
+	}
 	r.header.miniFatLocs = make([]uint32, c)
 	r.header.miniFatLocs[0] = r.header.miniFatSectorLoc
 	for i := 1; i < c; i++ {

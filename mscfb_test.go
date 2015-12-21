@@ -1,7 +1,9 @@
 package mscfb
 
 import (
+	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"testing"
 )
@@ -83,8 +85,8 @@ func testFile(t *testing.T, path string) {
 	if len(doc.File) < 3 {
 		t.Fatalf("Expecting several directory entries, only got %d", len(doc.File))
 	}
+	buf := make([]byte, 512)
 	for entry, _ := doc.Next(); entry != nil; entry, _ = doc.Next() {
-		buf := make([]byte, 512)
 		_, err := doc.Read(buf)
 		if err != nil && err != io.EOF {
 			t.Errorf("Error reading entry name, %v", entry.Name)
@@ -93,7 +95,6 @@ func testFile(t *testing.T, path string) {
 			t.Errorf("Error reading entry name")
 		}
 	}
-
 }
 
 func TestTraverse(t *testing.T) {
@@ -135,3 +136,46 @@ func TestPpt(t *testing.T) {
 func TestXls(t *testing.T) {
 	testFile(t, testXls)
 }
+
+func benchFile(b *testing.B, path string) {
+	b.StopTimer()
+	buf, _ := ioutil.ReadFile(path)
+	entrybuf := make([]byte, 512)
+	b.StartTimer()
+	rdr := bytes.NewReader(buf)
+	for i := 0; i < b.N; i++ {
+		doc, _ := New(rdr)
+		for entry, _ := doc.Next(); entry != nil; entry, _ = doc.Next() {
+			doc.Read(entrybuf)
+		}
+	}
+}
+
+func BenchmarkNovPapPlan(b *testing.B) {
+	benchFile(b, novPapPlan)
+}
+
+func BenchmarkWord(b *testing.B) {
+	benchFile(b, testDoc)
+}
+
+func BenchmarkMsg(b *testing.B) {
+	benchFile(b, testMsg)
+}
+
+func BenchmarkPpt(b *testing.B) {
+	benchFile(b, testPpt)
+}
+
+func BenchmarkXls(b *testing.B) {
+	benchFile(b, testXls)
+}
+
+/*
+22/12
+	BenchmarkNovPapPlan	  200000	     10751 ns/op
+	BenchmarkWord	  200000	      8580 ns/op
+	BenchmarkMsg	   10000	    172717 ns/op
+	BenchmarkPpt	  100000	     12611 ns/op
+	BenchmarkXls	  100000	     14791 ns/op
+*/

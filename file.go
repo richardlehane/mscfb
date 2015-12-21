@@ -77,6 +77,104 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 	return d
 }
 
+func (r *Reader) setDirEntries() error {
+	c := 20
+	if r.header.numDirectorySectors > 0 {
+		c = int(r.header.numDirectorySectors)
+	}
+	fs := make([]*File, 0, c)
+	num := int(sectorSize / 128)
+	sn := r.header.directorySectorLoc
+	for sn != endOfChain {
+		buf, err := r.readAt(fileOffset(sn), int(sectorSize))
+		if err != nil {
+			return Error{ErrRead, "directory entries read error (" + err.Error() + ")", fileOffset(sn)}
+		}
+		for i := 0; i < num; i++ {
+			f := &File{r: r}
+			f.directoryEntryFields = makeDirEntry(buf[i*128:])
+			if f.directoryEntryFields.objectType != unknown {
+				fixFile(r.header.majorVersion, f)
+				f.readSector = f.startingSectorLoc
+				fs = append(fs, f)
+			}
+		}
+		if nsn, err := r.findNext(sn, false); err != nil || nsn == sn {
+			if err != nil {
+				return Error{ErrRead, "directory entries error finding sector (" + err.Error() + ")", int64(nsn)}
+			}
+			return Error{ErrRead, "directory entries sector cycle", int64(nsn)}
+		} else {
+			sn = nsn
+		}
+	}
+	r.File = fs
+	return nil
+}
+
+func fixFile(v uint16, f *File) {
+	fixName(f)
+	// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
+	if v > 3 {
+		f.Size = int64(binary.LittleEndian.Uint64(f.streamSize[:]))
+	} else {
+		f.Size = int64(binary.LittleEndian.Uint32(f.streamSize[:4]))
+	}
+}
+
+func fixName(f *File) {
+	// From the spec:
+	// "The length [name] MUST be a multiple of 2, and include the terminating null character in the count.
+	// This length MUST NOT exceed 64, the maximum size of the Directory Entry Name field."
+	if f.nameLength < 4 || f.nameLength > 64 {
+		return
+	}
+	nlen := int(f.nameLength/2 - 1)
+	f.Initial = f.rawName[0]
+	var slen int
+	if !unicode.IsPrint(rune(f.Initial)) {
+		slen = 1
+	}
+	f.Name = string(utf16.Decode(f.rawName[slen:nlen]))
+}
+
+func (r *Reader) traverse() error {
+	r.indexes = make([]int, len(r.File))
+	var idx int
+	var recurse func(int, []string)
+	var err error
+	recurse = func(i int, path []string) {
+		if i < 0 || i >= len(r.File) {
+			err = Error{ErrTraverse, "illegal traversal index", int64(i)}
+			return
+		}
+		file := r.File[i]
+		if file.leftSibID != noStream {
+			recurse(int(file.leftSibID), path)
+		}
+		if idx >= len(r.indexes) {
+			err = Error{ErrTraverse, "traversal counter overflow", int64(i)}
+			return
+		}
+		r.indexes[idx] = i
+		file.Path = path
+		idx++
+		if file.childID != noStream {
+			if i > 0 {
+				recurse(int(file.childID), append(path, file.Name))
+			} else {
+				recurse(int(file.childID), path)
+			}
+		}
+		if file.rightSibID != noStream {
+			recurse(int(file.rightSibID), path)
+		}
+		return
+	}
+	recurse(0, []string{})
+	return err
+}
+
 // File represents a MSCFB directory entry
 type File struct {
 	Name       string   // stream or directory name
@@ -151,119 +249,118 @@ func (f *File) Read(b []byte) (int, error) {
 	for _, v := range str {
 		jdx := idx + int(v[1])
 		if jdx < idx || jdx > sz {
-			return 0, ErrRead
+			return 0, Error{ErrRead, "bad read length", int64(jdx)}
 		}
 		j, err := f.r.ra.ReadAt(b[idx:jdx], v[0])
 		i = i + j
 		if err != nil {
 			f.i += int64(i)
-			return i, ErrRead
+			return i, Error{ErrRead, "underlying reader fail (" + err.Error() + ")", int64(idx)}
 		}
 		idx = jdx
 	}
 	f.i += int64(i)
 	if i != sz {
-		err = ErrRead
+		err = Error{ErrRead, "bytes read do not match expected read size", int64(i)}
 	} else if i < len(b) {
 		err = io.EOF
 	}
 	return i, err
 }
 
-func (r *Reader) setDirEntries() error {
-	c := 20
-	if r.header.numDirectorySectors > 0 {
-		c = int(r.header.numDirectorySectors)
+// return offsets and lengths for read
+func (f *File) stream(sz int) ([][2]int64, error) {
+	// calculate ministream and sector size
+	var mini bool
+	if f.Size < miniStreamCutoffSize {
+		mini = true
 	}
-	fs := make([]*File, 0, c)
-	num := int(sectorSize / 128)
-	sn := r.header.directorySectorLoc
-	for sn != endOfChain {
-		buf, err := r.readAt(fileOffset(sn), int(sectorSize))
-		if err != nil {
-			return ErrRead
-		}
-		for i := 0; i < num; i++ {
-			f := &File{r: r}
-			f.directoryEntryFields = makeDirEntry(buf[i*128:])
-			if f.directoryEntryFields.objectType != unknown {
-				fixFile(r.header.majorVersion, f)
-				f.readSector = f.startingSectorLoc
-				fs = append(fs, f)
-			}
-		}
-		if nsn, err := r.findNext(sn, false); err != nil || nsn == sn {
-			if err != nil {
-				return err
-			}
-			return ErrBadDir
-		} else {
-			sn = nsn
-		}
-	}
-	r.File = fs
-	return nil
-}
-
-func fixFile(v uint16, f *File) {
-	fixName(f)
-	// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
-	if v > 3 {
-		f.Size = int64(binary.LittleEndian.Uint64(f.streamSize[:]))
+	var l int
+	var ss int64
+	if mini {
+		l = sz/64 + 2
+		ss = 64
 	} else {
-		f.Size = int64(binary.LittleEndian.Uint32(f.streamSize[:4]))
+		l = sz/int(sectorSize) + 2
+		ss = int64(sectorSize)
 	}
-}
 
-func fixName(f *File) {
-	// From the spec:
-	// "The length [name] MUST be a multiple of 2, and include the terminating null character in the count.
-	// This length MUST NOT exceed 64, the maximum size of the Directory Entry Name field."
-	if f.nameLength < 4 || f.nameLength > 64 {
-		return
-	}
-	nlen := int(f.nameLength/2 - 1)
-	f.Initial = f.rawName[0]
-	var slen int
-	if !unicode.IsPrint(rune(f.Initial)) {
-		slen = 1
-	}
-	f.Name = string(utf16.Decode(f.rawName[slen:nlen]))
-}
+	sectors := make([][2]int64, 0, l)
+	var i, j int
 
-func (r *Reader) traverse() error {
-	r.indexes = make([]int, len(r.File))
-	var idx int
-	var recurse func(int, []string)
-	var err error
-	recurse = func(i int, path []string) {
-		if i < 0 || i >= len(r.File) {
-			err = ErrBadDir
-			return
+	// if we have a remainder from a previous read, use it first
+	if f.rem > 0 {
+		offset, err := f.r.getOffset(f.readSector, mini)
+		if err != nil {
+			return nil, err
 		}
-		file := r.File[i]
-		if file.leftSibID != noStream {
-			recurse(int(file.leftSibID), path)
+		if ss-f.rem >= int64(sz) {
+			sectors = append(sectors, [2]int64{offset + f.rem, int64(sz)})
+		} else {
+			sectors = append(sectors, [2]int64{offset + f.rem, ss - f.rem})
 		}
-		if idx >= len(r.indexes) {
-			err = ErrBadDir
-			return
+		if ss-f.rem <= int64(sz) {
+			f.rem = 0
+			f.readSector, err = f.r.findNext(f.readSector, mini)
+			if err != nil {
+				return nil, err
+			}
+			j += int(ss - f.rem)
+		} else {
+			f.rem += int64(sz)
 		}
-		r.indexes[idx] = i
-		file.Path = path
-		idx++
-		if file.childID != noStream {
-			if i > 0 {
-				recurse(int(file.childID), append(path, file.Name))
-			} else {
-				recurse(int(file.childID), path)
+		if sectors[0][1] == int64(sz) {
+			return sectors, nil
+		}
+		if f.readSector == endOfChain {
+			return nil, Error{ErrRead, "unexpected early end of chain", int64(f.readSector)}
+		}
+		i++
+	}
+
+	for {
+		// emergency brake!
+		if i >= cap(sectors) {
+			return nil, Error{ErrRead, "index overruns sector length", int64(i)}
+		}
+		// grab the next offset
+		offset, err := f.r.getOffset(f.readSector, mini)
+		if err != nil {
+			return nil, err
+		}
+		// check if we are at the last sector
+		if sz-j < int(ss) {
+			sectors = append(sectors, [2]int64{offset, int64(sz - j)})
+			f.rem = int64(sz - j)
+			return compressChain(sectors), nil
+		} else {
+			sectors = append(sectors, [2]int64{offset, ss})
+			j += int(ss)
+			f.readSector, err = f.r.findNext(f.readSector, mini)
+			if err != nil {
+				return nil, err
+			}
+			// we might be at the last sector if there is no remainder, if so can return
+			if j == sz {
+				return compressChain(sectors), nil
 			}
 		}
-		if file.rightSibID != noStream {
-			recurse(int(file.rightSibID), path)
-		}
-		return
+		i++
 	}
-	recurse(0, []string{})
-	return err
+}
+
+func compressChain(locs [][2]int64) [][2]int64 {
+	l := len(locs)
+	for i, x := 0, 0; i < l && x+1 < len(locs); i++ {
+		if locs[x][0]+locs[x][1] == locs[x+1][0] {
+			locs[x][1] = locs[x][1] + locs[x+1][1]
+			for j := range locs[x+1 : len(locs)-1] {
+				locs[x+1+j] = locs[j+x+2]
+			}
+			locs = locs[:len(locs)-1]
+		} else {
+			x += 1
+		}
+	}
+	return locs
 }

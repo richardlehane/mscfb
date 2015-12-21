@@ -67,28 +67,6 @@ type header struct {
 	miniStreamLocs []uint32 // chain of sectors containing the ministream
 }
 
-func (r *Reader) setDifats() error {
-	r.header.difats = r.header.initialDifats[:]
-	if r.header.numDifatSectors > 0 {
-		sz := sectorSize / 4
-		n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
-		copy(n, r.header.difats)
-		r.header.difats = n
-		off := r.header.difatSectorLoc
-		for i := 0; i < int(r.header.numDifatSectors); i++ {
-			buf, err := r.readAt(fileOffset(off), int(sectorSize))
-			if err != nil {
-				return err
-			}
-			for j := 0; j < int(sz)-1; j++ {
-				r.header.difats = append(r.header.difats, binary.LittleEndian.Uint32(buf[j*4:j*4+4]))
-			}
-			off = binary.LittleEndian.Uint32(buf[len(buf)-4:])
-		}
-	}
-	return nil
-}
-
 func (r *Reader) setHeader() error {
 	buf, err := r.readAt(0, lenHeader)
 	if err != nil {
@@ -97,11 +75,88 @@ func (r *Reader) setHeader() error {
 	r.header = &header{headerFields: makeHeader(buf)}
 	// sanity check - check signature
 	if r.header.signature != signature {
-		return ErrFormat
+		return Error{ErrFormat, "bad signature", int64(r.header.signature)}
 	}
+	// check for legal sector size
 	if r.header.sectorSize == 0x0009 || r.header.sectorSize == 0x000c {
 		setSectorSize(r.header.sectorSize)
+	} else {
+		return Error{ErrFormat, "illegal sector size", int64(r.header.sectorSize)}
+	}
+	// check for DIFAT overflow
+	if r.header.numDifatSectors > 0 {
+		sz := (sectorSize / 4) - 1
+		if int(r.header.numDifatSectors*sz+109) < 0 {
+			return Error{ErrFormat, "DIFAT int overflow", int64(r.header.numDifatSectors)}
+		}
+		if r.header.numDifatSectors*sz+109 > r.header.numFatSectors+sz {
+			return Error{ErrFormat, "num DIFATs exceeds FAT sectors", int64(r.header.numDifatSectors)}
+		}
+	}
+	// check for mini FAT overflow
+	if r.header.numMiniFatSectors > 0 {
+		if int(sectorSize/4*r.header.numMiniFatSectors) < 0 {
+			return Error{ErrFormat, "mini FAT int overflow", int64(r.header.numMiniFatSectors)}
+		}
+		if r.header.numMiniFatSectors > r.header.numFatSectors*(sectorSize/miniStreamSectorSize) {
+			return Error{ErrFormat, "num mini FATs exceeds FAT sectors", int64(r.header.numFatSectors)}
+		}
+	}
+	return nil
+}
+
+func (r *Reader) setDifats() error {
+	r.header.difats = r.header.initialDifats[:]
+	// return early if no extra DIFAT sectors
+	if r.header.numDifatSectors == 0 {
 		return nil
 	}
-	return ErrSectorSize
+	sz := (sectorSize / 4) - 1
+	n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
+	copy(n, r.header.difats)
+	r.header.difats = n
+	off := r.header.difatSectorLoc
+	for i := 0; i < int(r.header.numDifatSectors); i++ {
+		buf, err := r.readAt(fileOffset(off), int(sectorSize))
+		if err != nil {
+			return Error{ErrFormat, "error setting DIFAT(" + err.Error() + ")", int64(off)}
+		}
+		for j := 0; j < int(sz); j++ {
+			r.header.difats = append(r.header.difats, binary.LittleEndian.Uint32(buf[j*4:j*4+4]))
+		}
+		off = binary.LittleEndian.Uint32(buf[len(buf)-4:])
+	}
+	return nil
+}
+
+// set the ministream FAT and sector slices in the header
+func (r *Reader) setMiniStream() error {
+	// do nothing if there is no ministream
+	if r.File[0].startingSectorLoc == endOfChain || r.header.miniFatSectorLoc == endOfChain || r.header.numMiniFatSectors == 0 {
+		return nil
+	}
+	// build a slice of minifat sectors (akin to the DIFAT slice)
+	c := int(r.header.numMiniFatSectors)
+	r.header.miniFatLocs = make([]uint32, c)
+	r.header.miniFatLocs[0] = r.header.miniFatSectorLoc
+	for i := 1; i < c; i++ {
+		loc, err := r.findNext(r.header.miniFatLocs[i-1], false)
+		if err != nil {
+			return Error{ErrFormat, "setting mini stream (" + err.Error() + ")", int64(r.header.miniFatLocs[i-1])}
+		}
+		r.header.miniFatLocs[i] = loc
+	}
+	// build a slice of ministream sectors
+	c = int(sectorSize / 4 * r.header.numMiniFatSectors)
+	r.header.miniStreamLocs = make([]uint32, 0, c)
+	sn := r.File[0].startingSectorLoc
+	var err error
+	for sn != endOfChain {
+		r.header.miniStreamLocs = append(r.header.miniStreamLocs, sn)
+		sn, err = r.findNext(sn, false)
+		if err != nil {
+			return Error{ErrFormat, "setting mini stream (" + err.Error() + ")", int64(sn)}
+		}
+	}
+	return nil
 }

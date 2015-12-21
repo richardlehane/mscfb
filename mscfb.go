@@ -36,17 +36,8 @@ package mscfb
 
 import (
 	"encoding/binary"
-	"errors"
 	"io"
 	"time"
-)
-
-var (
-	ErrFormat     = errors.New("mscfb: not a valid compound file")
-	ErrRead       = errors.New("mscfb: error reading compound file")
-	ErrBadDir     = errors.New("mscfb: error traversing directory structure")
-	ErrSeek       = errors.New("mscfb: error calculating offset")
-	ErrSectorSize = errors.New("mscfb: invalid sector size")
 )
 
 var sectorSize uint32
@@ -80,15 +71,15 @@ func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 	if r.slicer {
 		b, err := r.ra.(slicer).Slice(offset, length)
 		if err != nil {
-			return nil, ErrRead
+			return nil, Error{ErrRead, "slicer read (" + err.Error() + ")", offset}
 		}
 		return b, nil
 	}
 	if length > len(r.buf) {
-		return nil, ErrRead
+		return nil, Error{ErrRead, "read length greater than read buffer", int64(length)}
 	}
 	if _, err := r.ra.ReadAt(r.buf[:length], offset); err != nil {
-		return nil, ErrRead
+		return nil, Error{ErrRead, err.Error(), offset}
 	}
 	return r.buf[:length], nil
 }
@@ -98,7 +89,7 @@ func (r *Reader) getOffset(sn uint32, mini bool) (int64, error) {
 		num := sectorSize / 64
 		sec := int(sn / num)
 		if sec >= len(r.header.miniStreamLocs) {
-			return 0, ErrRead
+			return 0, Error{ErrRead, "minisector number is outside minisector range", int64(sec)}
 		}
 		dif := sn % num
 		return int64((r.header.miniStreamLocs[sec]+1)*sectorSize + dif*64), nil
@@ -113,12 +104,12 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	var sect uint32
 	if mini {
 		if index < 0 || index >= len(r.header.miniFatLocs) {
-			return 0, ErrSeek
+			return 0, Error{ErrRead, "minisector index is outside miniFAT range", int64(index)}
 		}
 		sect = r.header.miniFatLocs[index]
 	} else {
 		if index < 0 || index >= len(r.header.difats) {
-			return 0, ErrSeek
+			return 0, Error{ErrRead, "FAT index is outside DIFAT range", int64(index)}
 		}
 		sect = r.header.difats[index]
 	}
@@ -126,7 +117,7 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	offset := fileOffset(sect) + int64(fatIndex*4)
 	buf, err := r.readAt(offset, 4)
 	if err != nil {
-		return 0, err
+		return 0, Error{ErrRead, "bad read finding next sector (" + err.Error() + ")", offset}
 	}
 	return binary.LittleEndian.Uint32(buf), nil
 }

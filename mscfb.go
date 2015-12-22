@@ -71,7 +71,7 @@ func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 	if r.slicer {
 		b, err := r.ra.(slicer).Slice(offset, length)
 		if err != nil {
-			return nil, Error{ErrRead, "slicer read (" + err.Error() + ")", offset}
+			return nil, Error{ErrRead, "slicer read error (" + err.Error() + ")", offset}
 		}
 		return b, nil
 	}

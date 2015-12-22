@@ -17,8 +17,12 @@ package mscfb
 import "strconv"
 
 const (
+	// ErrFormat reports issues with the MSCFB's header structures
 	ErrFormat = iota
+	// ErrRead reports issues attempting to read MSCFB streams
 	ErrRead
+	// ErrTraverse reports issues attempting to traverse the child-parent-sibling relations
+	// between MSCFB storage objects
 	ErrTraverse
 )
 
@@ -32,6 +36,7 @@ func (e Error) Error() string {
 	return "mscfb: " + e.msg + "; " + strconv.FormatInt(e.val, 10)
 }
 
+// Typ gives the type of MSCFB error
 func (e Error) Typ() int {
 	return e.typ
 }

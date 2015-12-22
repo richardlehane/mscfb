@@ -140,7 +140,7 @@ func TestXls(t *testing.T) {
 func benchFile(b *testing.B, path string) {
 	b.StopTimer()
 	buf, _ := ioutil.ReadFile(path)
-	entrybuf := make([]byte, 512)
+	entrybuf := make([]byte, 32000)
 	b.StartTimer()
 	rdr := bytes.NewReader(buf)
 	for i := 0; i < b.N; i++ {
@@ -173,9 +173,9 @@ func BenchmarkXls(b *testing.B) {
 
 /*
 22/12
-	BenchmarkNovPapPlan	  200000	     10751 ns/op
-	BenchmarkWord	  200000	      8580 ns/op
-	BenchmarkMsg	   10000	    172717 ns/op
-	BenchmarkPpt	  100000	     12611 ns/op
-	BenchmarkXls	  100000	     14791 ns/op
+	BenchmarkNovPapPlan	   50000	     31676 ns/op
+	BenchmarkWord	   20000	     65693 ns/op
+	BenchmarkMsg	   10000	    198380 ns/op
+	BenchmarkPpt	   50000	     30156 ns/op
+	BenchmarkXls	  100000	     20327 ns/op
 */

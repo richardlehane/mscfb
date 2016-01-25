@@ -83,6 +83,7 @@ func (r *Reader) setDirEntries() error {
 		c = int(r.header.numDirectorySectors)
 	}
 	fs := make([]*File, 0, c)
+	cycles := make(map[uint32]bool)
 	num := int(sectorSize / 128)
 	sn := r.header.directorySectorLoc
 	for sn != endOfChain {
@@ -99,14 +100,17 @@ func (r *Reader) setDirEntries() error {
 				fs = append(fs, f)
 			}
 		}
-		if nsn, err := r.findNext(sn, false); err != nil || nsn == sn {
-			if err != nil {
-				return Error{ErrRead, "directory entries error finding sector (" + err.Error() + ")", int64(nsn)}
-			}
-			return Error{ErrRead, "directory entries sector cycle", int64(nsn)}
-		} else {
-			sn = nsn
+		nsn, err := r.findNext(sn, false)
+		if err != nil {
+			return Error{ErrRead, "directory entries error finding sector (" + err.Error() + ")", int64(nsn)}
 		}
+		if nsn <= sn {
+			if nsn == sn || cycles[nsn] {
+				return Error{ErrRead, "directory entries sector cycle", int64(nsn)}
+			}
+			cycles[nsn] = true
+		}
+		sn = nsn
 	}
 	r.File = fs
 	return nil

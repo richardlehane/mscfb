@@ -270,13 +270,14 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 
 // Reader provides sequential access to the contents of a MS compound file (MSCFB)
 type Reader struct {
-	slicer  bool
-	buf     []byte
-	header  *header
-	File    []*File // File is a slice of directory entries. Not necessarily in correct order. Use Next() for order.
-	entry   int
-	indexes []int
-	ra      io.ReaderAt
+	slicer     bool
+	buf        []byte
+	header     *header
+	File       []*File // File is a slice of directory entries. Not necessarily in correct order. Use Next() for order.
+	entry      int
+	indexes    []int
+	direntries []int
+	ra         io.ReaderAt
 }
 
 // New returns a MSCFB reader
@@ -328,7 +329,7 @@ func (r *Reader) Modified() time.Time {
 // This isn't necessarily an adjacent *File within the File slice, but is based on the Left Sibling, Right Sibling and Child information in directory entries.
 func (r *Reader) Next() (*File, error) {
 	r.entry++
-	if r.entry >= len(r.File) {
+	if r.entry >= len(r.indexes) {
 		return nil, io.EOF
 	}
 	return r.File[r.indexes[r.entry]], nil
@@ -336,7 +337,7 @@ func (r *Reader) Next() (*File, error) {
 
 // Read the current directory entry
 func (r *Reader) Read(b []byte) (n int, err error) {
-	if r.entry >= len(r.File) {
+	if r.entry >= len(r.indexes) {
 		return 0, io.EOF
 	}
 	return r.File[r.indexes[r.entry]].Read(b)

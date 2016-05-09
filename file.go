@@ -82,7 +82,7 @@ func (r *Reader) setDirEntries() error {
 	if r.header.numDirectorySectors > 0 {
 		c = int(r.header.numDirectorySectors)
 	}
-	fs := make([]*File, 0, c)
+	fs, de := make([]*File, 0, c), make([]int, 0, c)
 	cycles := make(map[uint32]bool)
 	num := int(sectorSize / 128)
 	sn := r.header.directorySectorLoc
@@ -92,6 +92,7 @@ func (r *Reader) setDirEntries() error {
 			return Error{ErrRead, "directory entries read error (" + err.Error() + ")", fileOffset(sn)}
 		}
 		for i := 0; i < num; i++ {
+			de = append(de, len(fs))
 			f := &File{r: r}
 			f.directoryEntryFields = makeDirEntry(buf[i*128:])
 			if f.directoryEntryFields.objectType != unknown {
@@ -112,7 +113,7 @@ func (r *Reader) setDirEntries() error {
 		}
 		sn = nsn
 	}
-	r.File = fs
+	r.File, r.direntries = fs, de
 	return nil
 }
 
@@ -148,11 +149,11 @@ func (r *Reader) traverse() error {
 	var recurse func(int, []string)
 	var err error
 	recurse = func(i int, path []string) {
-		if i < 0 || i >= len(r.File) {
+		if i < 0 || i >= len(r.direntries) || r.direntries[i] >= len(r.File) {
 			err = Error{ErrTraverse, "illegal traversal index", int64(i)}
 			return
 		}
-		file := r.File[i]
+		file := r.File[r.direntries[i]]
 		if file.leftSibID != noStream {
 			recurse(int(file.leftSibID), path)
 		}
@@ -160,7 +161,7 @@ func (r *Reader) traverse() error {
 			err = Error{ErrTraverse, "traversal counter overflow", int64(i)}
 			return
 		}
-		r.indexes[idx] = i
+		r.indexes[idx] = r.direntries[i]
 		file.Path = path
 		idx++
 		if file.childID != noStream {
@@ -176,6 +177,7 @@ func (r *Reader) traverse() error {
 		return
 	}
 	recurse(0, []string{})
+	r.indexes = r.indexes[:idx]
 	return err
 }
 

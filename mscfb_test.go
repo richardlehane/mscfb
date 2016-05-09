@@ -100,6 +100,7 @@ func testFile(t *testing.T, path string) {
 func TestTraverse(t *testing.T) {
 	r := new(Reader)
 	r.File = testEntries
+	r.direntries = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
 	if r.traverse() != nil {
 		t.Error("Error traversing")
 	}

@@ -99,22 +99,27 @@ func testFile(t *testing.T, path string) {
 
 func TestTraverse(t *testing.T) {
 	r := new(Reader)
-	r.File = testEntries
-	r.direntries = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+	r.direntries = testEntries
 	if r.traverse() != nil {
 		t.Error("Error traversing")
 	}
 	expect := []int{0, 1, 2, 4, 5, 8, 9, 11, 6, 3, 7, 10}
-	for i, v := range r.indexes {
-		if v != expect[i] {
-			t.Errorf("Error traversing: expecting %d at index %d; got %d", expect[i], i, v)
+	if len(r.File) != len(expect) {
+		t.Fatalf("Error traversing: expecting %d entries, got %d", len(expect), len(r.File))
+	}
+	for i, v := range r.File {
+		if v != testEntries[expect[i]] {
+			t.Errorf("Error traversing: expecting %d at index %d; got %v", expect[i], i, v)
 		}
 	}
-	if r.File[10].Path[0] != "Charlie" {
-		t.Errorf("Error traversing: expecting Charlie got %s", r.File[10].Path[0])
+	if len(r.File[len(r.File)-1].Path) != 2 {
+		t.Fatalf("Error traversing: expecting a path length of %d, got %d", 2, len(r.File[len(r.File)-1].Path))
 	}
-	if r.File[10].Path[1] != "Golf" {
-		t.Errorf("Error traversing: expecting Golf got %s", r.File[10].Path[1])
+	if r.File[len(r.File)-1].Path[0] != "Charlie" {
+		t.Errorf("Error traversing: expecting Charlie got %s", r.File[expect[10]].Path[0])
+	}
+	if r.File[len(r.File)-1].Path[1] != "Golf" {
+		t.Errorf("Error traversing: expecting Golf got %s", r.File[expect[10]].Path[1])
 	}
 }
 

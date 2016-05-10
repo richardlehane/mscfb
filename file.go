@@ -82,7 +82,7 @@ func (r *Reader) setDirEntries() error {
 	if r.header.numDirectorySectors > 0 {
 		c = int(r.header.numDirectorySectors)
 	}
-	fs, de := make([]*File, 0, c), make([]int, 0, c)
+	de := make([]*File, 0, c)
 	cycles := make(map[uint32]bool)
 	num := int(sectorSize / 128)
 	sn := r.header.directorySectorLoc
@@ -92,14 +92,11 @@ func (r *Reader) setDirEntries() error {
 			return Error{ErrRead, "directory entries read error (" + err.Error() + ")", fileOffset(sn)}
 		}
 		for i := 0; i < num; i++ {
-			de = append(de, len(fs))
 			f := &File{r: r}
 			f.directoryEntryFields = makeDirEntry(buf[i*128:])
-			if f.directoryEntryFields.objectType != unknown {
-				fixFile(r.header.majorVersion, f)
-				f.readSector = f.startingSectorLoc
-				fs = append(fs, f)
-			}
+			fixFile(r.header.majorVersion, f)
+			f.readSector = f.startingSectorLoc
+			de = append(de, f)
 		}
 		nsn, err := r.findNext(sn, false)
 		if err != nil {
@@ -113,7 +110,7 @@ func (r *Reader) setDirEntries() error {
 		}
 		sn = nsn
 	}
-	r.File, r.direntries = fs, de
+	r.direntries = de
 	return nil
 }
 
@@ -144,26 +141,24 @@ func fixName(f *File) {
 }
 
 func (r *Reader) traverse() error {
-	r.indexes = make([]int, len(r.File))
-	var idx int
+	r.File = make([]*File, 0, len(r.direntries))
 	var recurse func(int, []string)
 	var err error
 	recurse = func(i int, path []string) {
-		if i < 0 || i >= len(r.direntries) || r.direntries[i] >= len(r.File) {
+		if i < 0 || i >= len(r.direntries) {
 			err = Error{ErrTraverse, "illegal traversal index", int64(i)}
 			return
 		}
-		file := r.File[r.direntries[i]]
+		file := r.direntries[i]
 		if file.leftSibID != noStream {
 			recurse(int(file.leftSibID), path)
 		}
-		if idx >= len(r.indexes) {
+		if len(r.File) >= cap(r.File) {
 			err = Error{ErrTraverse, "traversal counter overflow", int64(i)}
 			return
 		}
-		r.indexes[idx] = r.direntries[i]
+		r.File = append(r.File, file)
 		file.Path = path
-		idx++
 		if file.childID != noStream {
 			if i > 0 {
 				recurse(int(file.childID), append(path, file.Name))
@@ -177,7 +172,6 @@ func (r *Reader) traverse() error {
 		return
 	}
 	recurse(0, []string{})
-	r.indexes = r.indexes[:idx]
 	return err
 }
 

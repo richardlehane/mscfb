@@ -363,6 +363,10 @@ const (
 	ErrFormat = iota
 	// ErrRead reports issues attempting to read MSCFB streams
 	ErrRead
+	// ErrSeek reports seek issues
+	ErrSeek
+	// ErrWrite reports write issues
+	ErrWrite
 	// ErrTraverse reports issues attempting to traverse the child-parent-sibling relations
 	// between MSCFB storage objects
 	ErrTraverse

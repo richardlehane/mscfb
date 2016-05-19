@@ -95,7 +95,7 @@ func (r *Reader) setDirEntries() error {
 			f := &File{r: r}
 			f.directoryEntryFields = makeDirEntry(buf[i*128:])
 			fixFile(r.header.majorVersion, f)
-			f.readSector = f.startingSectorLoc
+			f.curSector = f.startingSectorLoc
 			de = append(de, f)
 		}
 		nsn, err := r.findNext(sn, false)
@@ -177,13 +177,13 @@ func (r *Reader) traverse() error {
 
 // File represents a MSCFB directory entry
 type File struct {
-	Name       string   // stream or directory name
-	Initial    uint16   // the first character in the name (identifies special streams such as MSOLEPS property sets)
-	Path       []string // file path
-	Size       int64    // size of stream
-	i          int64    // bytes read
-	readSector uint32   // next sector for Read
-	rem        int64    // offset in current sector remaining previous Read
+	Name      string   // stream or directory name
+	Initial   uint16   // the first character in the name (identifies special streams such as MSOLEPS property sets)
+	Path      []string // file path
+	Size      int64    // size of stream
+	i         int64    // bytes read
+	curSector uint32   // next sector for Read | Write
+	rem       int64    // offset in current sector remaining previous Read | Write
 	*directoryEntryFields
 	r *Reader
 }
@@ -268,16 +268,102 @@ func (f *File) Read(b []byte) (int, error) {
 	return i, err
 }
 
-// return offsets and lengths for read
-func (f *File) stream(sz int) ([][2]int64, error) {
+// Seek sets the offset for the next Read or Write to offset, interpreted according to whence: 0 means relative to the
+// start of the file, 1 means relative to the current offset, and 2 means relative to the end. Seek returns the new
+// offset relative to the start of the file and an error, if any.
+func (f *File) Seek(offset int64, whence int) (int64, error) {
+	var abs int64
+	switch whence {
+	default:
+		return 0, Error{ErrSeek, "invalid whence", int64(whence)}
+	case 0:
+		abs = offset
+	case 1:
+		abs = f.i + offset
+	case 2:
+		abs = f.Size - offset - 1
+	}
+	switch {
+	case abs < 0:
+		return 0, Error{ErrSeek, "can't seek before start of File", abs}
+	case abs >= f.Size:
+		return 0, Error{ErrSeek, "can't seek past File length", abs}
+	case abs == f.i:
+		return abs, nil
+	case abs > f.i:
+		f.i = abs
+		return abs, f.seek(abs - f.i)
+	}
+	if f.rem >= f.i-abs {
+		f.rem = f.rem - (f.i - abs)
+		return abs, nil
+	}
+	f.rem = 0
+	f.curSector = f.startingSectorLoc
+	return abs, f.seek(abs)
+}
+
+func (f *File) seek(sz int64) error {
 	// calculate ministream and sector size
 	var mini bool
+	var ss int64
 	if f.Size < miniStreamCutoffSize {
 		mini = true
+		ss = 64
+	} else {
+		ss = int64(sectorSize)
 	}
+
+	var j int64
+	var err error
+	// if we have a remainder in the current sector, use it first
+	if f.rem > 0 {
+		if ss-f.rem <= sz {
+			f.rem = 0
+			f.curSector, err = f.r.findNext(f.curSector, mini)
+			if err != nil {
+				return err
+			}
+			j += ss - f.rem
+			if j == sz {
+				return nil
+			}
+		} else {
+			f.rem += sz
+			return nil
+		}
+		if f.curSector == endOfChain {
+			return Error{ErrRead, "unexpected early end of chain", int64(f.curSector)}
+		}
+	}
+
+	for {
+		// check if we are at the last sector
+		if sz-j < ss {
+			f.rem = sz - j
+			return nil
+		} else {
+			j += ss
+			f.curSector, err = f.r.findNext(f.curSector, mini)
+			if err != nil {
+				return err
+			}
+			// we might be at the last sector if there is no remainder, if so can return
+			if j == sz {
+				return nil
+			}
+		}
+	}
+}
+
+// return offsets and lengths for read or write
+func (f *File) stream(sz int) ([][2]int64, error) {
+	// calculate ministream, cap for sector slice, and sector size
+	var mini bool
 	var l int
 	var ss int64
-	if mini {
+	if f.Size < miniStreamCutoffSize {
+		mini = true
 		l = sz/64 + 2
 		ss = 64
 	} else {
@@ -290,7 +376,7 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 
 	// if we have a remainder from a previous read, use it first
 	if f.rem > 0 {
-		offset, err := f.r.getOffset(f.readSector, mini)
+		offset, err := f.r.getOffset(f.curSector, mini)
 		if err != nil {
 			return nil, err
 		}
@@ -301,7 +387,7 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 		}
 		if ss-f.rem <= int64(sz) {
 			f.rem = 0
-			f.readSector, err = f.r.findNext(f.readSector, mini)
+			f.curSector, err = f.r.findNext(f.curSector, mini)
 			if err != nil {
 				return nil, err
 			}
@@ -312,8 +398,8 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 		if sectors[0][1] == int64(sz) {
 			return sectors, nil
 		}
-		if f.readSector == endOfChain {
-			return nil, Error{ErrRead, "unexpected early end of chain", int64(f.readSector)}
+		if f.curSector == endOfChain {
+			return nil, Error{ErrRead, "unexpected early end of chain", int64(f.curSector)}
 		}
 		i++
 	}
@@ -324,7 +410,7 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 			return nil, Error{ErrRead, "index overruns sector length", int64(i)}
 		}
 		// grab the next offset
-		offset, err := f.r.getOffset(f.readSector, mini)
+		offset, err := f.r.getOffset(f.curSector, mini)
 		if err != nil {
 			return nil, err
 		}
@@ -336,7 +422,7 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 		} else {
 			sectors = append(sectors, [2]int64{offset, ss})
 			j += int(ss)
-			f.readSector, err = f.r.findNext(f.readSector, mini)
+			f.curSector, err = f.r.findNext(f.curSector, mini)
 			if err != nil {
 				return nil, err
 			}

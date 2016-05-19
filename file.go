@@ -116,6 +116,9 @@ func (r *Reader) setDirEntries() error {
 
 func fixFile(v uint16, f *File) {
 	fixName(f)
+	if f.objectType != stream {
+		return
+	}
 	// if the MSCFB major version is 4, then this can be a uint64 otherwise is a uint32 and the least signficant bits can contain junk
 	if v > 3 {
 		f.Size = int64(binary.LittleEndian.Uint64(f.streamSize[:]))
@@ -232,7 +235,7 @@ func (f *File) Modified() time.Time {
 // Read this directory entry
 // Returns 0, io.EOF if no stream is available (i.e. for a storage object)
 func (f *File) Read(b []byte) (int, error) {
-	if f.objectType != stream || f.Size < 1 || f.i >= f.Size {
+	if f.Size < 1 || f.i >= f.Size {
 		return 0, io.EOF
 	}
 	sz := len(b)
@@ -272,7 +275,7 @@ func (f *File) Read(b []byte) (int, error) {
 // Depends on the io.ReaderAt supplied to mscfb.New() being a WriterAt too
 // Returns 0, io.EOF if no stream is available (i.e. for a storage object)
 func (f *File) Write(b []byte) (int, error) {
-	if f.objectType != stream || f.Size < 1 || f.i >= f.Size {
+	if f.Size < 1 || f.i >= f.Size {
 		return 0, io.EOF
 	}
 	if f.r.wa == nil {

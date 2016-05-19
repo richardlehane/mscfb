@@ -143,6 +143,21 @@ func TestXls(t *testing.T) {
 	testFile(t, testXls)
 }
 
+func TestSeek(t *testing.T) {
+	file, _ := os.Open(testXls)
+	defer file.Close()
+	doc, _ := New(file)
+	// the first entry in the XLS file is 2719 bytes
+	if doc.File[3].Size != 2719 {
+		t.Fatalf("Expecting the third entry of the XLS file to be 2719 bytes long; it is %d", doc.File[3].Size)
+	}
+	buf := make([]byte, 2719)
+	i, err := doc.File[3].Read(buf)
+	if i != 2719 || err != nil {
+		t.Fatalf("Expecting 2719 length and an EOF; got %d and %v", i, err)
+	}
+}
+
 func TestWrite(t *testing.T) {
 	file, err := os.OpenFile(testXls, os.O_RDWR, 0666)
 	if err != nil {

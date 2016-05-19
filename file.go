@@ -343,10 +343,12 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	}
 	if f.rem >= f.i-abs {
 		f.rem = f.rem - (f.i - abs)
+		f.i = abs
 		return abs, nil
 	}
 	f.rem = 0
 	f.curSector = f.startingSectorLoc
+	f.i = abs
 	return abs, f.seek(abs)
 }
 

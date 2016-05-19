@@ -143,6 +143,74 @@ func TestXls(t *testing.T) {
 	testFile(t, testXls)
 }
 
+func TestWrite(t *testing.T) {
+	file, err := os.OpenFile(testXls, os.O_RDWR, 0666)
+	if err != nil {
+		t.Fatalf("error opening file for read/write %v", err)
+	}
+	defer file.Close()
+	doc, err := New(file)
+	if err != nil {
+		t.Fatalf("Error opening file; Returns error: %v", err)
+	}
+	if len(doc.File) < 3 {
+		t.Fatalf("Expecting several directory entries, only got %d", len(doc.File))
+	}
+	var ok bool
+	for entry, _ := doc.Next(); entry != nil; entry, _ = doc.Next() {
+		if entry.Size > 512 {
+			buf, err := ioutil.ReadAll(entry)
+			if err != nil && err != io.EOF {
+				t.Fatalf("got error reading all %v", err)
+			}
+			off, err := entry.Seek(0, 0)
+			if off != 0 || err != nil {
+				t.Fatalf("error seeking, got %d %v", off, err)
+			}
+			i, err := entry.Write([]byte("test"))
+			if i != 4 || err != nil {
+				t.Errorf("error writing, got %d %v", off, err)
+			}
+			off, err = entry.Seek(0, 0)
+			if off != 0 || err != nil {
+				t.Fatalf("error seeking, got %d %v", off, err)
+			}
+			res := make([]byte, 4)
+			i, err = entry.Read(res)
+			if i != 4 || err != nil {
+				t.Errorf("error reading, got %d %v", off, err)
+			}
+			if string(res) != "test" {
+				t.Errorf("expecting test, got %s", string(res))
+			}
+			off, err = entry.Seek(0, 0)
+			if off != 0 || err != nil {
+				t.Fatalf("error seeking, got %d %v", off, err)
+			}
+			i, err = entry.Write(buf[:4])
+			if i != 4 || err != nil {
+				t.Errorf("error writing, got %d %v", off, err)
+			}
+			off, err = entry.Seek(0, 0)
+			if off != 0 || err != nil {
+				t.Fatalf("error seeking, got %d %v", off, err)
+			}
+			i, err = entry.Read(res)
+			if i != 4 || err != nil {
+				t.Errorf("error reading, got %d %v", off, err)
+			}
+			if string(res) != string(buf[:4]) {
+				t.Errorf("bad result, expected %s, got %s", string(buf[:4]), string(res))
+			}
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		t.Error("Unable to check write, no entries of sufficient length")
+	}
+}
+
 func benchFile(b *testing.B, path string) {
 	b.StopTimer()
 	buf, _ := ioutil.ReadFile(path)

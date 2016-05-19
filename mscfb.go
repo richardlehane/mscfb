@@ -278,6 +278,7 @@ type Reader struct {
 	entry      int
 
 	ra io.ReaderAt
+	wa io.WriterAt
 }
 
 // New returns a MSCFB reader

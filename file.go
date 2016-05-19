@@ -268,6 +268,53 @@ func (f *File) Read(b []byte) (int, error) {
 	return i, err
 }
 
+// Write to this directory entry
+// Depends on the io.ReaderAt supplied to mscfb.New() being a WriterAt too
+// Returns 0, io.EOF if no stream is available (i.e. for a storage object)
+func (f *File) Write(b []byte) (int, error) {
+	if f.objectType != stream || f.Size < 1 || f.i >= f.Size {
+		return 0, io.EOF
+	}
+	if f.r.wa == nil {
+		wa, ok := f.r.ra.(io.WriterAt)
+		if !ok {
+			return 0, Error{ErrWrite, "mscfb.New must be given ReaderAt convertible to a io.WriterAt in order to write", 0}
+		}
+		f.r.wa = wa
+	}
+	sz := len(b)
+	if int64(sz) > f.Size-f.i {
+		sz = int(f.Size - f.i)
+	}
+	// get sectors and lengths for writes
+	str, err := f.stream(sz)
+	if err != nil {
+		return 0, err
+	}
+	// now read
+	var idx, i int
+	for _, v := range str {
+		jdx := idx + int(v[1])
+		if jdx < idx || jdx > sz {
+			return 0, Error{ErrWrite, "bad write length", int64(jdx)}
+		}
+		j, err := f.r.wa.WriteAt(b[idx:jdx], v[0])
+		i = i + j
+		if err != nil {
+			f.i += int64(i)
+			return i, Error{ErrWrite, "underlying writer fail (" + err.Error() + ")", int64(idx)}
+		}
+		idx = jdx
+	}
+	f.i += int64(i)
+	if i != sz {
+		err = Error{ErrWrite, "bytes written do not match expected write size", int64(i)}
+	} else if i < len(b) {
+		err = io.EOF
+	}
+	return i, err
+}
+
 // Seek sets the offset for the next Read or Write to offset, interpreted according to whence: 0 means relative to the
 // start of the file, 1 means relative to the current offset, and 2 means relative to the end. Seek returns the new
 // offset relative to the start of the file and an error, if any.

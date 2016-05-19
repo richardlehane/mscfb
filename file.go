@@ -318,6 +318,30 @@ func (f *File) Write(b []byte) (int, error) {
 	return i, err
 }
 
+// ReadAt reads p bytes at offset off from start of file. Does not affect seek place for other reads/writes.
+func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
+	// memorize place
+	mi, mrem, mcur := f.i, f.rem, f.curSector
+	_, err = f.Seek(off, 0)
+	if err == nil {
+		n, err = f.Read(p)
+	}
+	f.i, f.rem, f.curSector = mi, mrem, mcur
+	return n, err
+}
+
+// WriteAt reads p bytes at offset off from start of file. Does not affect seek place for other reads/writes.
+func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
+	// memorize place
+	mi, mrem, mcur := f.i, f.rem, f.curSector
+	_, err = f.Seek(off, 0)
+	if err == nil {
+		n, err = f.Write(p)
+	}
+	f.i, f.rem, f.curSector = mi, mrem, mcur
+	return n, err
+}
+
 // Seek sets the offset for the next Read or Write to offset, interpreted according to whence: 0 means relative to the
 // start of the file, 1 means relative to the current offset, and 2 means relative to the end. Seek returns the new
 // offset relative to the start of the file and an error, if any.
@@ -331,7 +355,7 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	case 1:
 		abs = f.i + offset
 	case 2:
-		abs = f.Size - offset - 1
+		abs = f.Size - offset
 	}
 	switch {
 	case abs < 0:

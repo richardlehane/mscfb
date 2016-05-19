@@ -148,16 +148,31 @@ func TestSeek(t *testing.T) {
 	defer file.Close()
 	doc, _ := New(file)
 	// the first entry in the XLS file is 2719 bytes
-	if doc.File[3].Size != 2719 {
-		t.Fatalf("Expecting the third entry of the XLS file to be 2719 bytes long; it is %d", doc.File[3].Size)
+	f := doc.File[3]
+	if f.Size != 2719 {
+		t.Fatalf("Expecting the third entry of the XLS file to be 2719 bytes long; it is %d", f.Size)
 	}
 	buf := make([]byte, 2719)
-	i, err := doc.File[3].Read(buf)
+	i, err := f.Read(buf)
 	if i != 2719 || err != nil {
-		t.Fatalf("Expecting 2719 length and an EOF; got %d and %v", i, err)
+		t.Fatalf("Expecting 2719 length and no error; got %d and %v", i, err)
+	}
+	s, err := f.Seek(50, 1)
+	if s != 2719 || err == nil {
+		t.Fatalf("%v, %d", err, s)
+	}
+	s, err = f.Seek(1500, 0)
+	if s != 1500 || err != nil {
+		t.Fatalf("%v, %d", err, s)
+	}
+	nbuf := make([]byte, 475)
+	i, err = f.Read(nbuf)
+	if i != 475 || err != nil {
+		t.Fatalf("Expecting 475 length and no error; got %d and %v", i, err)
 	}
 }
 
+/*
 func TestWrite(t *testing.T) {
 	file, err := os.OpenFile(testXls, os.O_RDWR, 0666)
 	if err != nil {
@@ -225,7 +240,7 @@ func TestWrite(t *testing.T) {
 		t.Error("Unable to check write, no entries of sufficient length")
 	}
 }
-
+*/
 func benchFile(b *testing.B, path string) {
 	b.StopTimer()
 	buf, _ := ioutil.ReadFile(path)

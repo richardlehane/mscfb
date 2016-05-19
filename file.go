@@ -335,24 +335,25 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	}
 	switch {
 	case abs < 0:
-		return 0, Error{ErrSeek, "can't seek before start of File", abs}
+		return f.i, Error{ErrSeek, "can't seek before start of File", abs}
 	case abs >= f.Size:
-		return 0, Error{ErrSeek, "can't seek past File length", abs}
+		return f.i, Error{ErrSeek, "can't seek past File length", abs}
 	case abs == f.i:
 		return abs, nil
 	case abs > f.i:
+		t := f.i
 		f.i = abs
-		return abs, f.seek(abs - f.i)
+		return f.i, f.seek(abs - t)
 	}
 	if f.rem >= f.i-abs {
 		f.rem = f.rem - (f.i - abs)
 		f.i = abs
-		return abs, nil
+		return f.i, nil
 	}
 	f.rem = 0
 	f.curSector = f.startingSectorLoc
 	f.i = abs
-	return abs, f.seek(abs)
+	return f.i, f.seek(abs)
 }
 
 func (f *File) seek(sz int64) error {
@@ -371,12 +372,12 @@ func (f *File) seek(sz int64) error {
 	// if we have a remainder in the current sector, use it first
 	if f.rem > 0 {
 		if ss-f.rem <= sz {
-			f.rem = 0
 			f.curSector, err = f.r.findNext(f.curSector, mini)
 			if err != nil {
 				return err
 			}
 			j += ss - f.rem
+			f.rem = 0
 			if j == sz {
 				return nil
 			}
@@ -438,12 +439,12 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 			sectors = append(sectors, [2]int64{offset + f.rem, ss - f.rem})
 		}
 		if ss-f.rem <= int64(sz) {
-			f.rem = 0
 			f.curSector, err = f.r.findNext(f.curSector, mini)
 			if err != nil {
 				return nil, err
 			}
 			j += int(ss - f.rem)
+			f.rem = 0
 		} else {
 			f.rem += int64(sz)
 		}

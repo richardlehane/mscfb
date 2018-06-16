@@ -84,12 +84,12 @@ func (r *Reader) setDirEntries() error {
 	}
 	de := make([]*File, 0, c)
 	cycles := make(map[uint32]bool)
-	num := int(sectorSize / 128)
+	num := int(r.sectorSize / 128)
 	sn := r.header.directorySectorLoc
 	for sn != endOfChain {
-		buf, err := r.readAt(fileOffset(sn), int(sectorSize))
+		buf, err := r.readAt(fileOffset(r.sectorSize, sn), int(r.sectorSize))
 		if err != nil {
-			return Error{ErrRead, "directory entries read error (" + err.Error() + ")", fileOffset(sn)}
+			return Error{ErrRead, "directory entries read error (" + err.Error() + ")", fileOffset(r.sectorSize, sn)}
 		}
 		for i := 0; i < num; i++ {
 			f := &File{r: r}
@@ -388,7 +388,7 @@ func (f *File) seek(sz int64) error {
 		mini = true
 		ss = 64
 	} else {
-		ss = int64(sectorSize)
+		ss = int64(f.r.sectorSize)
 	}
 
 	var j int64
@@ -444,8 +444,8 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 		l = sz/64 + 2
 		ss = 64
 	} else {
-		l = sz/int(sectorSize) + 2
-		ss = int64(sectorSize)
+		l = sz/int(f.r.sectorSize) + 2
+		ss = int64(f.r.sectorSize)
 	}
 
 	sectors := make([][2]int64, 0, l)

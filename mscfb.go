@@ -41,14 +41,8 @@ import (
 	"time"
 )
 
-var sectorSize uint32
-
-func setSectorSize(ss uint16) {
-	sectorSize = uint32(1 << ss)
-}
-
-func fileOffset(sn uint32) int64 {
-	return int64((sn + 1) * sectorSize)
+func fileOffset(ss, sn uint32) int64 {
+	return int64((sn + 1) * ss)
 }
 
 const (
@@ -131,13 +125,13 @@ func (r *Reader) setHeader() error {
 	}
 	// check for legal sector size
 	if r.header.sectorSize == 0x0009 || r.header.sectorSize == 0x000c {
-		setSectorSize(r.header.sectorSize)
+		r.sectorSize = uint32(1 << r.header.sectorSize)
 	} else {
 		return Error{ErrFormat, "illegal sector size", int64(r.header.sectorSize)}
 	}
 	// check for DIFAT overflow
 	if r.header.numDifatSectors > 0 {
-		sz := (sectorSize / 4) - 1
+		sz := (r.sectorSize / 4) - 1
 		if int(r.header.numDifatSectors*sz+109) < 0 {
 			return Error{ErrFormat, "DIFAT int overflow", int64(r.header.numDifatSectors)}
 		}
@@ -147,10 +141,10 @@ func (r *Reader) setHeader() error {
 	}
 	// check for mini FAT overflow
 	if r.header.numMiniFatSectors > 0 {
-		if int(sectorSize/4*r.header.numMiniFatSectors) < 0 {
+		if int(r.sectorSize/4*r.header.numMiniFatSectors) < 0 {
 			return Error{ErrFormat, "mini FAT int overflow", int64(r.header.numMiniFatSectors)}
 		}
-		if r.header.numMiniFatSectors > r.header.numFatSectors*(sectorSize/miniStreamSectorSize) {
+		if r.header.numMiniFatSectors > r.header.numFatSectors*(r.sectorSize/miniStreamSectorSize) {
 			return Error{ErrFormat, "num mini FATs exceeds FAT sectors", int64(r.header.numFatSectors)}
 		}
 	}
@@ -163,13 +157,13 @@ func (r *Reader) setDifats() error {
 	if r.header.numDifatSectors == 0 {
 		return nil
 	}
-	sz := (sectorSize / 4) - 1
+	sz := (r.sectorSize / 4) - 1
 	n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
 	copy(n, r.header.difats)
 	r.header.difats = n
 	off := r.header.difatSectorLoc
 	for i := 0; i < int(r.header.numDifatSectors); i++ {
-		buf, err := r.readAt(fileOffset(off), int(sectorSize))
+		buf, err := r.readAt(fileOffset(r.sectorSize, off), int(r.sectorSize))
 		if err != nil {
 			return Error{ErrFormat, "error setting DIFAT(" + err.Error() + ")", int64(off)}
 		}
@@ -199,7 +193,7 @@ func (r *Reader) setMiniStream() error {
 		r.header.miniFatLocs[i] = loc
 	}
 	// build a slice of ministream sectors
-	c = int(sectorSize / 4 * r.header.numMiniFatSectors)
+	c = int(r.sectorSize / 4 * r.header.numMiniFatSectors)
 	r.header.miniStreamLocs = make([]uint32, 0, c)
 	sn := r.direntries[0].startingSectorLoc
 	var err error
@@ -232,20 +226,20 @@ func (r *Reader) readAt(offset int64, length int) ([]byte, error) {
 
 func (r *Reader) getOffset(sn uint32, mini bool) (int64, error) {
 	if mini {
-		num := sectorSize / 64
+		num := r.sectorSize / 64
 		sec := int(sn / num)
 		if sec >= len(r.header.miniStreamLocs) {
 			return 0, Error{ErrRead, "minisector number is outside minisector range", int64(sec)}
 		}
 		dif := sn % num
-		return int64((r.header.miniStreamLocs[sec]+1)*sectorSize + dif*64), nil
+		return int64((r.header.miniStreamLocs[sec]+1)*r.sectorSize + dif*64), nil
 	}
-	return fileOffset(sn), nil
+	return fileOffset(r.sectorSize, sn), nil
 }
 
 // check the FAT sector for the next sector in a chain
 func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
-	entries := sectorSize / 4
+	entries := r.sectorSize / 4
 	index := int(sn / entries) // find position in DIFAT or minifat array
 	var sect uint32
 	if mini {
@@ -260,7 +254,7 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 		sect = r.header.difats[index]
 	}
 	fatIndex := sn % entries // find position within FAT or MiniFAT sector
-	offset := fileOffset(sect) + int64(fatIndex*4)
+	offset := fileOffset(r.sectorSize, sect) + int64(fatIndex*4)
 	buf, err := r.readAt(offset, 4)
 	if err != nil {
 		return 0, Error{ErrRead, "bad read finding next sector (" + err.Error() + ")", offset}
@@ -271,6 +265,7 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 // Reader provides sequential access to the contents of a MS compound file (MSCFB)
 type Reader struct {
 	slicer     bool
+	sectorSize uint32
 	buf        []byte
 	header     *header
 	File       []*File // File is an ordered slice of final directory entries.
@@ -293,8 +288,8 @@ func New(ra io.ReaderAt) (*Reader, error) {
 		return nil, err
 	}
 	// resize the buffer to 4096 if sector size isn't 512
-	if !r.slicer && int(sectorSize) > len(r.buf) {
-		r.buf = make([]byte, sectorSize)
+	if !r.slicer && int(r.sectorSize) > len(r.buf) {
+		r.buf = make([]byte, r.sectorSize)
 	}
 	if err := r.setDifats(); err != nil {
 		return nil, err
@@ -347,7 +342,7 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 // Debug provides granular information from an mscfb file to assist with debugging
 func (r *Reader) Debug() map[string][]uint32 {
 	ret := map[string][]uint32{
-		"sector size":            []uint32{sectorSize},
+		"sector size":            []uint32{r.sectorSize},
 		"mini fat locs":          r.header.miniFatLocs,
 		"mini stream locs":       r.header.miniStreamLocs,
 		"directory sector":       []uint32{r.header.directorySectorLoc},

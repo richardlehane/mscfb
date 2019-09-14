@@ -153,7 +153,7 @@ func (r *Reader) traverse() error {
 			return
 		}
 		file := r.direntries[i]
-		if file.leftSibID != noStream {
+		if file.leftSibID != noStream && int(file.leftSibID) != i {
 			recurse(int(file.leftSibID), path)
 		}
 		if len(r.File) >= cap(r.File) {

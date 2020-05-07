@@ -517,6 +517,46 @@ func (f *File) stream(sz int) ([][2]int64, error) {
 	}
 }
 
+// HasVBA: Checks if this file contains VBA code
+// Returns true/false and offset to start decoding VBA
+func (f *File) HasVBA() (bool, int64) {
+
+    marker	:= []byte("\x00Attribut")
+	mlen	:= len(marker)
+	cur		:= 0
+	vba		:= false
+
+	size := 100 * 1024
+	buff := make([]byte, size)
+	offset	  := int64(0)
+	vbaOffset := int64(0)
+
+	for {
+		nr, err := f.ReadAt(buff, offset)
+		if nr > 0 {
+			for i, b := range buff {
+				if b == marker[cur] {
+					cur++
+				} else {
+					cur = 0
+				}
+				if cur == mlen {
+					vba = true
+					vbaOffset = offset + int64(i-3)
+					break
+				}
+			}
+			offset += int64(nr)
+		}
+		if vba || err != nil {
+			break
+		}
+
+	}
+	return vba, vbaOffset
+
+}
+
 func compressChain(locs [][2]int64) [][2]int64 {
 	l := len(locs)
 	for i, x := 0, 0; i < l && x+1 < len(locs); i++ {

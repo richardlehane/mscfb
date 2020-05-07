@@ -532,7 +532,7 @@ func (f *File) HasVBA() (bool, int64) {
 	vbaOffset := int64(0)
 
 	for {
-		nr, er := f.ReadAt(buff, offset)
+		nr, err := f.ReadAt(buff, offset)
 		if nr > 0 {
 			for i, b := range buff {
 				if b == marker[cur] {
@@ -548,7 +548,7 @@ func (f *File) HasVBA() (bool, int64) {
 			}
 			offset += int64(nr)
 		}
-		if er != nil {
+		if vba || err != nil {
 			break
 		}
 

@@ -18,20 +18,21 @@
 // early MS software such as MS Office.
 //
 // Example:
-//   file, _ := os.Open("test/test.doc")
-//   defer file.Close()
-//   doc, err := mscfb.New(file)
-//   if err != nil {
-//     log.Fatal(err)
-//   }
-//   for entry, err := doc.Next(); err == nil; entry, err = doc.Next() {
-//     buf := make([]byte, 512)
-//     i, _ := entry.Read(buf)
-//     if i > 0 {
-//       fmt.Println(buf[:i])
-//     }
-//     fmt.Println(entry.Name)
-//   }
+//
+//	file, _ := os.Open("test/test.doc")
+//	defer file.Close()
+//	doc, err := mscfb.New(file)
+//	if err != nil {
+//	  log.Fatal(err)
+//	}
+//	for entry, err := doc.Next(); err == nil; entry, err = doc.Next() {
+//	  buf := make([]byte, 512)
+//	  i, _ := entry.Read(buf)
+//	  if i > 0 {
+//	    fmt.Println(buf[:i])
+//	  }
+//	  fmt.Println(entry.Name)
+//	}
 package mscfb
 
 import (
@@ -262,7 +263,8 @@ func (r *Reader) findNext(sn uint32, mini bool) (uint32, error) {
 	}
 	fatIndex := sn % entries // find position within FAT or MiniFAT sector
 	offset := fileOffset(r.sectorSize, sect) + int64(fatIndex*4)
-	buf, err := r.readAt(offset, 4)
+	buf := make([]byte, 4)
+	_, err := r.ra.ReadAt(buf, offset)
 	if err != nil {
 		return 0, Error{ErrRead, "bad read finding next sector (" + err.Error() + ")", offset}
 	}

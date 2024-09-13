@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -141,6 +143,27 @@ func TestPpt(t *testing.T) {
 
 func TestXls(t *testing.T) {
 	testFile(t, testXls)
+}
+
+func TestConcurrentAccess(t *testing.T) {
+	file, _ := os.Open(testXls)
+	defer file.Close()
+	doc, err := New(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(len(doc.File))
+	for _, f := range doc.File {
+		go func() {
+			defer wg.Done()
+			_, err := io.Copy(io.Discard, f)
+			if err != nil {
+				log.Println(err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSeek(t *testing.T) {

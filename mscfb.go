@@ -351,11 +351,11 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 // Debug provides granular information from an mscfb file to assist with debugging
 func (r *Reader) Debug() map[string][]uint32 {
 	ret := map[string][]uint32{
-		"sector size":            []uint32{r.sectorSize},
+		"sector size":            {r.sectorSize},
 		"mini fat locs":          r.header.miniFatLocs,
 		"mini stream locs":       r.header.miniStreamLocs,
-		"directory sector":       []uint32{r.header.directorySectorLoc},
-		"mini stream start/size": []uint32{r.File[0].startingSectorLoc, binary.LittleEndian.Uint32(r.File[0].streamSize[:])},
+		"directory sector":       {r.header.directorySectorLoc},
+		"mini stream start/size": {r.File[0].startingSectorLoc, binary.LittleEndian.Uint32(r.File[0].streamSize[:])},
 	}
 	for f, err := r.Next(); err == nil; f, err = r.Next() {
 		ret[f.Name+" start/size"] = []uint32{f.startingSectorLoc, binary.LittleEndian.Uint32(f.streamSize[:])}

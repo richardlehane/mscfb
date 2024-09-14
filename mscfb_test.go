@@ -3,7 +3,6 @@ package mscfb
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"sync"
@@ -17,65 +16,44 @@ var (
 	testPpt     = "test/test.ppt"
 	testMsg     = "test/test.msg"
 	testEntries = []*File{
-		&File{Name: "Root Node",
+		{Name: "Root Node",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 1},
 		},
-		&File{Name: "Alpha",
+		{Name: "Alpha",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: 2, childID: noStream},
 		},
-		&File{Name: "Bravo",
+		{Name: "Bravo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: 3, childID: 5},
 		},
-		&File{Name: "Charlie",
+		{Name: "Charlie",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 7},
 		},
-		&File{Name: "Delta",
+		{Name: "Delta",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&File{Name: "Echo",
+		{Name: "Echo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: 4, rightSibID: 6, childID: 9},
 		},
-		&File{Name: "Foxtrot",
+		{Name: "Foxtrot",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&File{Name: "Golf",
+		{Name: "Golf",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 10},
 		},
-		&File{Name: "Hotel",
+		{Name: "Hotel",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&File{Name: "Indigo",
+		{Name: "Indigo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: 8, rightSibID: noStream, childID: 11},
 		},
-		&File{Name: "Jello",
+		{Name: "Jello",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
-		&File{Name: "Kilo",
+		{Name: "Kilo",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: noStream},
 		},
 	}
 )
-
-func equals(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func empty(sl []byte) bool {
-	for _, v := range sl {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
-}
 
 func testFile(t *testing.T, path string) {
 	file, _ := os.Open(path)
@@ -155,13 +133,13 @@ func TestConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(len(doc.File))
 	for _, f := range doc.File {
-		go func() {
+		go func(ff *File) {
 			defer wg.Done()
-			_, err := io.Copy(io.Discard, f)
+			_, err := io.Copy(io.Discard, ff)
 			if err != nil {
 				log.Println(err)
 			}
-		}()
+		}(f)
 	}
 	wg.Wait()
 }
@@ -306,7 +284,7 @@ func TestWrite(t *testing.T) {
 
 func benchFile(b *testing.B, path string) {
 	b.StopTimer()
-	buf, _ := ioutil.ReadFile(path)
+	buf, _ := os.ReadFile(path)
 	entrybuf := make([]byte, 32000)
 	b.StartTimer()
 	rdr := bytes.NewReader(buf)

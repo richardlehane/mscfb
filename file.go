@@ -228,6 +228,10 @@ func (f *File) Modified() time.Time {
 	return f.modify.Time()
 }
 
+func (f *File) GetClsID() types.Guid {
+	return f.directoryEntryFields.clsid
+}
+
 // Read this directory entry
 // Returns 0, io.EOF if no stream is available (i.e. for a storage object)
 func (f *File) Read(b []byte) (int, error) {

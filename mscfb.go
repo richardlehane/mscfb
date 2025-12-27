@@ -159,10 +159,14 @@ func (r *Reader) setDifats() error {
 		return nil
 	}
 	sz := (r.sectorSize / 4) - 1
-	n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
-	copy(n, r.header.difats)
-	r.header.difats = n
+	// prevent creation of arbitrarily large slice
+	if r.header.numDifatSectors < 64000 {
+		n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
+		copy(n, r.header.difats)
+		r.header.difats = n
+	}
 	off := r.header.difatSectorLoc
+	cycles := make(map[uint32]bool)
 	for i := 0; i < int(r.header.numDifatSectors); i++ {
 		buf, err := r.readAt(fileOffset(r.sectorSize, off), int(r.sectorSize))
 		if err != nil {
@@ -171,7 +175,15 @@ func (r *Reader) setDifats() error {
 		for j := 0; j < int(sz); j++ {
 			r.header.difats = append(r.header.difats, binary.LittleEndian.Uint32(buf[j*4:j*4+4]))
 		}
-		off = binary.LittleEndian.Uint32(buf[len(buf)-4:])
+		// detect cycles in difat
+		noff := binary.LittleEndian.Uint32(buf[len(buf)-4:])
+		if noff <= off {
+			if noff == off || cycles[noff] {
+				return Error{ErrRead, "cycle detected in difat", int64(noff)}
+			}
+			cycles[noff] = true
+		}
+		off = noff
 	}
 	return nil
 }

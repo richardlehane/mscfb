@@ -65,6 +65,8 @@ const (
 
 const lenHeader int = 8 + 16 + 10 + 6 + 12 + 8 + 16 + 109*4
 
+const sliceLimit uint32 = 64000
+
 type headerFields struct {
 	signature           uint64
 	_                   [16]byte    //CLSID - ignore, must be null
@@ -159,8 +161,8 @@ func (r *Reader) setDifats() error {
 		return nil
 	}
 	sz := (r.sectorSize / 4) - 1
-	// prevent creation of arbitrarily large slice
-	if r.header.numDifatSectors < 64000 {
+	// prevent creation of an arbitrarily large slice
+	if r.header.numDifatSectors < sliceLimit {
 		n := make([]uint32, 109, r.header.numDifatSectors*sz+109)
 		copy(n, r.header.difats)
 		r.header.difats = n
@@ -207,6 +209,10 @@ func (r *Reader) setMiniStream() error {
 	}
 	// build a slice of ministream sectors
 	c = int(r.sectorSize / 4 * r.header.numMiniFatSectors)
+	// prevent creation of an arbitrarily large slice
+	if r.header.numMiniFatSectors > sliceLimit {
+		c = int(sliceLimit)
+	}
 	r.header.miniStreamLocs = make([]uint32, 0, c)
 	cycles := make(map[uint32]bool)
 	sn := r.direntries[0].startingSectorLoc

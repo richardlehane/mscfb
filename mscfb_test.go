@@ -10,11 +10,23 @@ import (
 )
 
 var (
-	novPapPlan  = "test/novpapplan.doc"
-	testDoc     = "test/test.doc"
-	testXls     = "test/test.xls"
-	testPpt     = "test/test.ppt"
-	testMsg     = "test/test.msg"
+	novPapPlan = "test/novpapplan.doc"
+	testDoc    = "test/test.doc"
+	testXls    = "test/test.xls"
+	testPpt    = "test/test.ppt"
+	testMsg    = "test/test.msg"
+	//   Root
+	//    |
+	//  Alpha -- Bravo -- -- -- -- -- Charlie
+	//             |                     |
+	//  Delta --  Echo -- Foxtrot      Golf
+	//             |                     |
+	//  Hotel -- Indigo                Jello
+	//             |
+	//           Kilo
+	// Expected paths:
+	// Root, Alpha, Bravo, Bravo/Echo, Bravo/Delta, Bravo/Echo/Indigo, Bravo/Echo/Hotel,
+	// Bravo/Echo/Indigo/Kilo, Bravo/Foxtrot, Charlie, Charlie/Golf, Charlie/Golf/Jello
 	testEntries = []*File{
 		{Name: "Root Node",
 			directoryEntryFields: &directoryEntryFields{leftSibID: noStream, rightSibID: noStream, childID: 1},
@@ -92,14 +104,26 @@ func TestTraverse(t *testing.T) {
 			t.Errorf("Error traversing: expecting %d at index %d; got %v", expect[i], i, v)
 		}
 	}
+	// expect Bravo/Echo/Indigo
+	if len(r.File[5].Path) != 2 {
+		t.Fatalf("Error traversing: expecting a path length of %d, got %d", 2, len(r.File[4].Path))
+	}
+	if r.File[5].Path[0] != "Bravo" {
+		t.Fatalf("Error traversing: expected path Bravo/Echo, got %s", r.File[4].Path[0])
+	}
+	if r.File[5].Path[1] != "Echo" {
+		t.Fatalf("Error traversing: expected path Bravo/Echo, got %s", r.File[4].Path[1])
+	}
+
+	// test last path
 	if len(r.File[len(r.File)-1].Path) != 2 {
 		t.Fatalf("Error traversing: expecting a path length of %d, got %d", 2, len(r.File[len(r.File)-1].Path))
 	}
 	if r.File[len(r.File)-1].Path[0] != "Charlie" {
-		t.Errorf("Error traversing: expecting Charlie got %s", r.File[expect[10]].Path[0])
+		t.Errorf("Error traversing: expecting Charlie got %s", r.File[len(r.File)-1].Path[0])
 	}
 	if r.File[len(r.File)-1].Path[1] != "Golf" {
-		t.Errorf("Error traversing: expecting Golf got %s", r.File[expect[10]].Path[1])
+		t.Errorf("Error traversing: expecting Golf got %s", r.File[len(r.File)-1].Path[1])
 	}
 }
 

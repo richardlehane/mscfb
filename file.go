@@ -161,7 +161,12 @@ func (r *Reader) traverse() error {
 		file.Path = path
 		if file.childID != noStream {
 			if i > 0 {
-				recurse(int(file.childID), append(path, file.Name))
+				// allow sharing of paths between siblings with same parents,
+				// otherwise paths need to have their own backing array #17
+				newPath := make([]string, len(path)+1)
+				copy(newPath, path)
+				newPath[len(newPath)-1] = file.Name
+				recurse(int(file.childID), newPath)
 			} else {
 				recurse(int(file.childID), path)
 			}

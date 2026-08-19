@@ -198,6 +198,10 @@ func (r *Reader) setMiniStream() error {
 	}
 	// build a slice of minifat sectors (akin to the DIFAT slice)
 	c := int(r.header.numMiniFatSectors)
+	// prevent creation of an arbitrarily large slice from an untrusted sector count
+	if r.header.numMiniFatSectors > sliceLimit {
+		return Error{ErrFormat, "num mini FAT sectors exceeds size limit", int64(r.header.numMiniFatSectors)}
+	}
 	r.header.miniFatLocs = make([]uint32, c)
 	r.header.miniFatLocs[0] = r.header.miniFatSectorLoc
 	for i := 1; i < c; i++ {

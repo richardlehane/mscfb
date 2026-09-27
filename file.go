@@ -72,7 +72,11 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 func (r *Reader) setDirEntries() error {
 	c := 20
 	if r.header.numDirectorySectors > 0 {
-		c = int(r.header.numDirectorySectors)
+		if r.header.numDirectorySectors > sliceLimit {
+			c = int(sliceLimit)
+		} else {
+			c = int(r.header.numDirectorySectors)
+		}
 	}
 	de := make([]*File, 0, c)
 	cycles := make(map[uint32]bool)

@@ -50,7 +50,6 @@ const (
 	signature            uint64 = 0xE11AB1A1E011CFD0
 	miniStreamSectorSize uint32 = 64
 	miniStreamCutoffSize int64  = 4096
-	dirEntrySize         uint32 = 128 //128 bytes
 )
 
 const (
@@ -213,8 +212,8 @@ func (r *Reader) setMiniStream() error {
 	}
 	// build a slice of ministream sectors
 	c = int(r.sectorSize / 4 * r.header.numMiniFatSectors)
-	// prevent creation of an arbitrarily large slice
-	if r.header.numMiniFatSectors > sliceLimit {
+	// clamp the allocation to sliceLimit
+	if c > int(sliceLimit) {
 		c = int(sliceLimit)
 	}
 	r.header.miniStreamLocs = make([]uint32, 0, c)

@@ -71,7 +71,7 @@ func makeDirEntry(b []byte) *directoryEntryFields {
 
 func (r *Reader) setDirEntries() error {
 	c := 20
-	if r.header.numDirectorySectors > 0 {
+	if r.header.majorVersion > 3 && r.header.numDirectorySectors > 0 {
 		if r.header.numDirectorySectors > sliceLimit {
 			c = int(sliceLimit)
 		} else {
@@ -106,6 +106,9 @@ func (r *Reader) setDirEntries() error {
 		}
 		sn = nsn
 	}
+	if len(de) == 0 {
+		return Error{ErrFormat, "no directory entries found", 0}
+	}
 	r.direntries = de
 	return nil
 }
@@ -120,6 +123,10 @@ func fixFile(v uint16, f *File) {
 		f.Size = int64(binary.LittleEndian.Uint64(f.streamSize[:]))
 	} else {
 		f.Size = int64(binary.LittleEndian.Uint32(f.streamSize[:4]))
+	}
+	// no negative file sizes
+	if f.Size < 0 {
+		f.Size = 0
 	}
 }
 

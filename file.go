@@ -172,6 +172,11 @@ func (r *Reader) traverse() error {
 		file.Path = path
 		if file.childID != noStream {
 			if i > 0 {
+				// prevent unbounded allocations from malicious files #20
+				if len(path) >= PathLimit {
+					err = Error{ErrPathLimit, "maximum recursion depth exceeded. Increase PathLimit if needed.", int64(len(path))}
+					return
+				}
 				// allow sharing of paths between siblings with same parents,
 				// otherwise paths need to have their own backing array #17
 				newPath := make([]string, len(path)+1)

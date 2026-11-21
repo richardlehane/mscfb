@@ -306,6 +306,43 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestCapPathLimit(t *testing.T) {
+	// Create a chain of 100 nested storage entries (0 -> 1 -> 2 -> ... -> 99)
+	entries := make([]*File, 100)
+	for i := 0; i < 100; i++ {
+		child := uint32(i + 1)
+		if i == 99 {
+			child = noStream
+		}
+		entries[i] = &File{
+			Name: "dir",
+			directoryEntryFields: &directoryEntryFields{
+				leftSibID:  noStream,
+				rightSibID: noStream,
+				childID:    child,
+			},
+		}
+	}
+	r := new(Reader)
+	r.direntries = entries
+	// Should fail with default PathLimit = 64
+	err := r.traverse()
+	if err == nil {
+		t.Fatal("expected traverse to fail with deep directory recursion")
+	}
+	mErr, ok := err.(Error)
+	if !ok || mErr.Typ() != ErrPathLimit {
+		t.Fatalf("expected ErrPathLimit, got %v", err)
+	}
+	// Should succeed when PathLimit increased
+	PathLimit = 100
+	r2 := new(Reader)
+	r2.direntries = entries
+	if err := r2.traverse(); err != nil {
+		t.Fatalf("expected traverse to succeed with higher PathLimit, got: %v", err)
+	}
+}
+
 func benchFile(b *testing.B, path string) {
 	b.StopTimer()
 	buf, _ := os.ReadFile(path)

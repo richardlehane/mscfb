@@ -62,6 +62,9 @@ const (
 	noStream       uint32 = 0xFFFFFFFF // empty pointer
 )
 
+// PathLimit caps recursion walking the directory tree to construct file paths
+var PathLimit int = 64
+
 const lenHeader int = 8 + 16 + 10 + 6 + 12 + 8 + 16 + 109*4
 
 const sliceLimit uint32 = 64000
@@ -397,6 +400,9 @@ const (
 	// ErrTraverse reports issues attempting to traverse the child-parent-sibling relations
 	// between MSCFB storage objects
 	ErrTraverse
+	// ErrPathLimit reports if a traverse of child-parent-sibling relations results in a path
+	// longer than PathLimit. PathLimit can be increased if needed.
+	ErrPathLimit
 )
 
 type Error struct {
